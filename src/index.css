@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens (HSL) */
+:root {
+	--background: 222 47% 97%;
+	--foreground: 222 47% 10%;
+	--muted: 220 14% 96%;
+	--muted-foreground: 220 9% 46%;
+	--border: 220 13% 91%;
+	--input: 220 13% 91%;
+	--ring: 199 89% 48%;
+
+	--primary: 199 89% 48%; /* sky-500 #0ea5e9 */
+	--primary-foreground: 210 40% 98%;
+
+	--secondary: 220 14% 96%;
+	--secondary-foreground: 222 47% 10%;
+
+	--accent: 199 89% 48%;
+	--accent-foreground: 210 40% 98%;
+
+	--destructive: 0 84% 60%;
+	--destructive-foreground: 210 40% 98%;
+
+	--card: 0 0% 100%;
+	--card-foreground: 222 47% 10%;
+
+	--popover: 0 0% 100%;
+	--popover-foreground: 222 47% 10%;
+}
+
+.dark {
+	--background: 222 47% 6%;
+	--foreground: 210 40% 98%;
+	--muted: 215 28% 17%;
+	--muted-foreground: 217 19% 75%;
+	--border: 217 19% 24%;
+	--input: 217 19% 24%;
+	--ring: 199 89% 48%;
+
+	--primary: 199 89% 48%; /* cyan/sky accent */
+	--primary-foreground: 210 40% 98%;
+
+	--secondary: 217 19% 24%;
+	--secondary-foreground: 210 40% 98%;
+
+	--accent: 199 89% 48%;
+	--accent-foreground: 210 40% 98%;
+
+	--destructive: 0 90% 60%;
+	--destructive-foreground: 210 40% 98%;
+
+	--card: 222 47% 8%;
+	--card-foreground: 210 40% 98%;
+
+	--popover: 222 47% 8%;
+	--popover-foreground: 210 40% 98%;
+}
+
+/* Base elements */
+@layer base {
+	html, body, #root {
+		height: 100%;
+	}
+	* {
+		@apply border-border/50;
+	}
+	body {
+		@apply bg-background text-foreground antialiased;
+	}
+}
+
+/* Utility for floating control surfaces */
+.surface {
+	@apply bg-card/95 backdrop-blur-md shadow-card border rounded-lg;
+}
+
+.control {
+	@apply inline-flex items-center justify-center rounded-md border bg-card/90 text-foreground shadow-sm hover:bg-card/100 transition;
+}
+
+
