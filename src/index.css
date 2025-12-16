@@ -4,81 +4,157 @@
 
 /* Design tokens (HSL) */
 :root {
-	--background: 222 47% 97%;
-	--foreground: 222 47% 10%;
-	--muted: 220 14% 96%;
-	--muted-foreground: 220 9% 46%;
-	--border: 220 13% 91%;
-	--input: 220 13% 91%;
-	--ring: 199 89% 48%;
+  --background: 222 47% 97%;
+  --foreground: 222 47% 10%;
+  --muted: 220 14% 96%;
+  --muted-foreground: 220 9% 46%;
+  --border: 220 13% 91%;
+  --input: 220 13% 91%;
+  --ring: 199 89% 48%;
 
-	--primary: 199 89% 48%; /* sky-500 #0ea5e9 */
-	--primary-foreground: 210 40% 98%;
+  --primary: 199 89% 48%; /* sky-500 #0ea5e9 */
+  --primary-foreground: 210 40% 98%;
 
-	--secondary: 220 14% 96%;
-	--secondary-foreground: 222 47% 10%;
+  --secondary: 220 14% 96%;
+  --secondary-foreground: 222 47% 10%;
 
-	--accent: 199 89% 48%;
-	--accent-foreground: 210 40% 98%;
+  --accent: 199 89% 48%;
+  --accent-foreground: 210 40% 98%;
 
-	--destructive: 0 84% 60%;
-	--destructive-foreground: 210 40% 98%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 210 40% 98%;
 
-	--card: 0 0% 100%;
-	--card-foreground: 222 47% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 10%;
 
-	--popover: 0 0% 100%;
-	--popover-foreground: 222 47% 10%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 10%;
 }
 
 .dark {
-	--background: 222 47% 6%;
-	--foreground: 210 40% 98%;
-	--muted: 215 28% 17%;
-	--muted-foreground: 217 19% 75%;
-	--border: 217 19% 24%;
-	--input: 217 19% 24%;
-	--ring: 199 89% 48%;
+  --background: 222 47% 6%;
+  --foreground: 210 40% 98%;
+  --muted: 215 28% 17%;
+  --muted-foreground: 217 19% 75%;
+  --border: 217 19% 24%;
+  --input: 217 19% 24%;
+  --ring: 199 89% 48%;
 
-	--primary: 199 89% 48%; /* cyan/sky accent */
-	--primary-foreground: 210 40% 98%;
+  --primary: 199 89% 48%; /* cyan/sky accent */
+  --primary-foreground: 210 40% 98%;
 
-	--secondary: 217 19% 24%;
-	--secondary-foreground: 210 40% 98%;
+  --secondary: 217 19% 24%;
+  --secondary-foreground: 210 40% 98%;
 
-	--accent: 199 89% 48%;
-	--accent-foreground: 210 40% 98%;
+  --accent: 199 89% 48%;
+  --accent-foreground: 210 40% 98%;
 
-	--destructive: 0 90% 60%;
-	--destructive-foreground: 210 40% 98%;
+  --destructive: 0 90% 60%;
+  --destructive-foreground: 210 40% 98%;
 
-	--card: 222 47% 8%;
-	--card-foreground: 210 40% 98%;
+  --card: 222 47% 8%;
+  --card-foreground: 210 40% 98%;
 
-	--popover: 222 47% 8%;
-	--popover-foreground: 210 40% 98%;
+  --popover: 222 47% 8%;
+  --popover-foreground: 210 40% 98%;
 }
 
 /* Base elements */
 @layer base {
-	html, body, #root {
-		height: 100%;
-	}
-	* {
-		@apply border-border/50;
-	}
-	body {
-		@apply bg-background text-foreground antialiased;
-	}
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  * {
+    @apply border-border/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
 }
 
 /* Utility for floating control surfaces */
 .surface {
-	@apply bg-card/95 backdrop-blur-md shadow-card border rounded-lg;
+  @apply bg-card/95 backdrop-blur-md shadow-card border rounded-lg;
 }
 
 .control {
-	@apply inline-flex items-center justify-center rounded-md border bg-card/90 text-foreground shadow-sm hover:bg-card/100 transition;
+  @apply inline-flex items-center justify-center rounded-md border bg-card/90 text-foreground shadow-sm hover:bg-card/100 transition;
 }
 
+/* Uniformiza controles nativos de MapLibre (tamaño/estilo/tema) */
+/* Contenedor y separación vertical en top-right */
+.maplibregl-ctrl-top-right .maplibregl-ctrl {
+  margin: 0 0 0.5rem 0; /* separación uniforme */
+}
+/* Agrupaciones: sin fondos propios, sin sombras legacy */
+.maplibregl-ctrl-group {
+  background: transparent;
+  box-shadow: none;
+  border: 0;
+}
+/* Botones de grupo y controles sueltos (fullscreen, etc.) */
+.maplibregl-ctrl button,
+.maplibregl-ctrl-group > button,
+.maplibregl-ctrl-fullscreen button {
+  width: 2.25rem; /* h-9 */
+  height: 2.25rem; /* h-9 */
+  padding: 0; /* uniformidad */
+  border-radius: 0.5rem; /* md */
+  border: 1px solid hsl(var(--border));
+  background-color: hsl(var(--card) / 0.9);
+  color: hsl(var(--foreground));
+  box-shadow: none;
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+.maplibregl-ctrl button:hover,
+.maplibregl-ctrl-group > button:hover,
+.maplibregl-ctrl-fullscreen button:hover {
+  background-color: hsl(var(--card));
+}
+.maplibregl-ctrl button:focus-visible,
+.maplibregl-ctrl-group > button:focus-visible,
+.maplibregl-ctrl-fullscreen button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px hsl(var(--ring));
+}
+/* Asegurar iconos centrados y consistentes */
+.maplibregl-ctrl-icon,
+.maplibregl-ctrl-compass > .maplibregl-ctrl-icon {
+  background-position: center;
+}
+/* Evitar solapes con attribution/scale en bottom-left (sin cambios funcionales) */
+.maplibregl-ctrl-bottom-left .maplibregl-ctrl {
+  margin: 0.25rem 0.5rem;
+}
 
+button.maplibregl-ctrl-custom-layers .maplibregl-ctrl-icon {
+  background-image: url("/src/assets/images/controls/layers.svg");
+  color: black;
+}
+
+button.maplibregl-ctrl-custom-locate .maplibregl-ctrl-icon {
+  background-image: url("/src/assets/images/controls/my_location.svg");
+  color: black;
+}
+
+button.maplibregl-ctrl-custom-reset .maplibregl-ctrl-icon {
+  background-image: url("/src/assets/images/controls/reset_view.svg");
+  color: black;
+}
+button.maplibregl-ctrl-custom-terrain-on .maplibregl-ctrl-icon {
+  background-image: url("/src/assets/images/controls/terrain_on.svg");
+  color: black !important;
+  background-color: rgb(60, 150, 60) !important;
+}
+button.maplibregl-ctrl-custom-terrain-off .maplibregl-ctrl-icon {
+  background-image: url("/src/assets/images/controls/terrain_off.svg");
+  color: black !important;
+}
+.maplibregl-ctrl-custom-top-right {
+  position: absolute;
+  right: 0;
+  /* top: 5rem; */
+  margin-top: 8.5rem;
+}

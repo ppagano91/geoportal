@@ -59,7 +59,7 @@ export interface Layer {
 	wmsLayers?: string
 }
 
-export type BaseMapStyle = 'dark' | 'light' | 'voyager'
+export type BaseMapStyle = 'streets' | 'satellite' | 'topo' | 'dark'
 
 export interface GeoPortalState {
 	layers: Layer[]
@@ -71,6 +71,8 @@ export interface GeoPortalState {
 	drawMode: 'none' | 'point' | 'line' | 'polygon' | 'rectangle' | 'circle'
 	drawings: GeoJSON.FeatureCollection
 	wmsDialogOpen: boolean
+	compareEnabled?: boolean
+	terrainEnabled?: boolean
 }
 
 

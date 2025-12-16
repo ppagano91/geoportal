@@ -1,34 +1,73 @@
-import React, { useContext } from 'react'
-import { GeoPortalContext } from '../../shell/GeoPortalApp'
-import { Globe, Moon, SunMedium } from 'lucide-react'
-import { cn } from '../../utils/cn'
+import React, { useContext, useEffect, useRef, useState } from "react";
+import { GeoPortalContext } from "../../shell/GeoPortalApp";
+import { Globe, Map, Satellite, Mountain, Moon } from "lucide-react";
+import { cn } from "../../utils/cn";
 
 export function BaseMapControl(): JSX.Element {
-	const ctx = useContext(GeoPortalContext)!
-	const { state, dispatch } = ctx
-	const items: Array<{ key: typeof state.baseMap; label: string; icon: React.ReactNode }> = [
-		{ key: 'dark', label: 'Dark Matter', icon: <Moon className="h-4 w-4" /> },
-		{ key: 'light', label: 'Positron', icon: <SunMedium className="h-4 w-4" /> },
-		{ key: 'voyager', label: 'Voyager', icon: <Globe className="h-4 w-4" /> }
-	]
-	return (
-		<div className="surface p-2 flex gap-2 items-center">
-			{items.map(it => (
-				<button
-					key={it.key}
-					className={cn(
-						'control h-9 px-3 text-sm',
-						state.baseMap === it.key ? 'bg-primary text-primary-foreground' : ''
-					)}
-					title={it.label}
-					onClick={() => dispatch({ type: 'setBaseMap', baseMap: it.key })}
-				>
-					{it.icon}
-					<span className="ml-2 hidden sm:inline">{it.label}</span>
-				</button>
-			))}
-		</div>
-	)
+  const ctx = useContext(GeoPortalContext)!;
+  const { state, dispatch } = ctx;
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (!ref.current) return;
+      if (!ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("click", onDoc);
+    return () => document.removeEventListener("click", onDoc);
+  }, []);
+
+  const items: Array<{ key: any; label: string; icon: React.ReactNode }> = [
+    { key: "streets", label: "Calles", icon: <Map className="h-4 w-4" /> },
+    {
+      key: "satellite",
+      label: "Satélite",
+      icon: <Satellite className="h-4 w-4" />,
+    },
+    {
+      key: "topo",
+      label: "Topográfico",
+      icon: <Mountain className="h-4 w-4" />,
+    },
+    { key: "dark", label: "Oscuro", icon: <Moon className="h-4 w-4" /> },
+  ];
+  return (
+    <div ref={ref} className="maplibregl-ctrl maplibregl-ctrl-group">
+      <button
+        className="maplibregl-ctrl-custom-layers"
+        title="Mapas base"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="maplibregl-ctrl-icon"></span>
+      </button>
+      {open && (
+        <div className="absolute right-11 top-0 surface p-2 w-44 z-40">
+          <div className="text-xs text-muted-foreground mb-1">Mapas base</div>
+          <div className="flex flex-col">
+            {items.map((it) => (
+              <div
+                key={it.key}
+                className={cn(
+                  "w-full flex text-left rounded hover:bg-muted cursor-pointer p-1 gap-2",
+                  state.baseMap === it.key
+                    ? "bg-primary text-primary-foreground hover:bg-primary"
+                    : ""
+                )}
+                onClick={() => {
+                  setOpen(false);
+                  dispatch({ type: "setBaseMap", baseMap: it.key });
+                }}
+              >
+                <span className="flex items-center justify-center">
+                  {it.icon}
+                </span>
+
+                <span className="text-sm">{it.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
-
-
