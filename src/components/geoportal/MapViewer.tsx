@@ -16,6 +16,8 @@ import { FeaturePopup } from "./FeaturePopup";
 import type { Layer } from "../../types/geoportal";
 import { MiniMap } from "./MiniMap";
 import { MapControls } from "./MapControls";
+import { env } from "../../config/env";
+
 // import MapboxDraw from "@mapbox/mapbox-gl-draw";
 
 // import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
@@ -93,7 +95,7 @@ const INITIAL_BEARING = 0;
 const MAX_ZOOM = 18;
 const MAX_PITCH = 85;
 const TERRAIN_EXAGGERATION = 1;
-const MAPTILER_KEY = "KRgqebvIFjOFYzICIrk1"; // TODO mover a env
+const MAPTILER_KEY = env.MAPTILER_KEY;
 const LAYER_CFG_CACHE_KEY = "__layerCfgCache";
 
 function getCfgCache(map: Map): Record<string, string> {

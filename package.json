@@ -4,17 +4,20 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node src/generateEnv.js && vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
+    "@mapbox/mapbox-gl-draw": "^1.5.1",
     "@maplibre/maplibre-gl-compare": "^0.5.0",
+    "dotenv": "^17.2.3",
     "lucide-react": "^0.460.0",
     "maplibre-gl": "^4.7.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-map-gl": "^8.1.0"
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.14",
