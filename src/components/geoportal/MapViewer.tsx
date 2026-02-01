@@ -1,4 +1,11 @@
-import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import maplibregl, { Map, MapMouseEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { RotateCcw, LocateFixed } from "lucide-react";
@@ -9,6 +16,9 @@ import { FeaturePopup } from "./FeaturePopup";
 import type { Layer } from "../../types/geoportal";
 import { MiniMap } from "./MiniMap";
 import { MapControls } from "./MapControls";
+// import MapboxDraw from "@mapbox/mapbox-gl-draw";
+
+// import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
 
 const BASEMAPS = {
   streets: {
@@ -75,13 +85,14 @@ const BASEMAPS = {
   } as any,
 } as const;
 
-const INITIAL_CENTER: [number, number] = [-61.933, -38.378]; // Sierra de la Ventana
-const INITIAL_ZOOM = 14;
-const INITIAL_PITCH = 60;
+// const INITIAL_CENTER: [number, number] = [-61.933, -38.378]; // Sierra de la Ventana
+const INITIAL_CENTER: [number, number] = [-58.3819, -34.5997]; // Ciudad Autónoma de Buenos Aires
+const INITIAL_ZOOM = 12;
+const INITIAL_PITCH = 0;
 const INITIAL_BEARING = 0;
 const MAX_ZOOM = 18;
 const MAX_PITCH = 85;
-const TERRAIN_EXAGGERATION = 2.5;
+const TERRAIN_EXAGGERATION = 1;
 const MAPTILER_KEY = "KRgqebvIFjOFYzICIrk1"; // TODO mover a env
 const LAYER_CFG_CACHE_KEY = "__layerCfgCache";
 
@@ -662,12 +673,36 @@ export function MapViewer(): JSX.Element {
   const { state } = ctx;
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
+  const drawRef = useRef(null);
   const [popup, setPopup] = useState<{
     coord: [number, number];
     feature: any;
   } | null>(null);
+  const [drawings, setDrawings] = useState(null);
   const [tempFeature, setTempFeature] = useState<GeoJSON.Feature | null>(null);
   const [terrainOn, setTerrainOn] = useState(true);
+
+  // const [features, setFeatures] = useState({});
+
+  // const onUpdate = useCallback((e: any) => {
+  //   setFeatures((currFeatures) => {
+  //     const newFeatures = { ...currFeatures };
+  //     for (const f of e.features) {
+  //       newFeatures[f.id] = f;
+  //     }
+  //     return newFeatures;
+  //   });
+  // }, []);
+
+  // const onDelete = useCallback((e) => {
+  //   setFeatures((currFeatures) => {
+  //     const newFeatures = { ...currFeatures };
+  //     for (const f of e.features) {
+  //       delete newFeatures[f.id];
+  //     }
+  //     return newFeatures;
+  //   });
+  // }, []);
 
   const styleUrl = useMemo(
     () => BASEMAPS[state.baseMap as any] ?? BASEMAPS.streets,
@@ -687,6 +722,20 @@ export function MapViewer(): JSX.Element {
       maxPitch: MAX_PITCH,
       attributionControl: false,
     });
+
+    // const draw = new MapboxDraw({
+    //   // displayControlsDefault: false,
+    //   controls: {
+    //     polygon: true,
+    //     line_string: true,
+    //     point: true,
+    //     trash: true,
+    //     undo: true,
+    //     redo: true,
+    //   },
+    //   defaultMode: "simple_select",
+    // });
+
     (window as any).maplibreglMap = map;
     mapRef.current = map;
 
@@ -698,6 +747,18 @@ export function MapViewer(): JSX.Element {
       new maplibregl.ScaleControl({ unit: "metric" }),
       "bottom-left"
     );
+
+    // map.addControl(draw, "top-left");
+
+    // const syncDrawings = () => {
+    //   const data = draw.getAll();
+    //   setDrawings(data);
+    // };
+
+    // map.on("draw.create", onUpdate);
+    // map.on("draw.update", onUpdate);
+    // map.on("draw.delete", onDelete);
+
     try {
       map.addControl(
         new maplibregl.AttributionControl({ compact: true }) as any,
@@ -796,12 +857,13 @@ export function MapViewer(): JSX.Element {
           }
           if (!map.getLayer("sky")) {
             map.addLayer({
-              id: "sky",
-              type: "sky",
+              id: "heatmap",
+              type: "heatmap",
+              source: "heatmap",
               paint: {
-                "sky-type": "atmosphere",
-                "sky-atmosphere-sun": [0.0, 0.0],
-                "sky-atmosphere-sun-intensity": 15,
+                "heatmap-type": "atmosphere",
+                "heatmap-atmosphere-sun": [0.0, 0.0],
+                "heatmap-atmosphere-sun-intensity": 15,
               },
             } as any);
           }
@@ -841,6 +903,11 @@ export function MapViewer(): JSX.Element {
     });
 
     return () => {
+      // map.off("draw.create", syncDrawings);
+      // map.off("draw.update", syncDrawings);
+      // map.off("draw.delete", syncDrawings);
+
+      // map.removeControl(draw);
       map.off("contextmenu", onContext);
       map.remove();
       try {
@@ -1211,10 +1278,11 @@ export function MapViewer(): JSX.Element {
   return (
     <div className="absolute inset-0 overflow-hidden">
       <div ref={mapContainerRef} className="absolute inset-0 h-full w-full" />
+
       {/* Izquierda: SOLO Dibujo */}
-      <div className="absolute top-3 left-3 z-20">
+      {/* <div className="absolute top-3 left-3 z-20">
         <MapControls />
-      </div>
+      </div> */}
 
       {/* Derecha: todos los demás controles, en columna (debajo de los nativos) */}
       <div className="maplibregl-ctrl-top-right maplibregl-ctrl-custom-top-right">

@@ -158,3 +158,41 @@ button.maplibregl-ctrl-custom-terrain-off .maplibregl-ctrl-icon {
   /* top: 5rem; */
   margin-top: 8.5rem;
 }
+
+/* ===== Mapbox Draw FIX para MapLibre ===== */
+
+.mapboxgl-ctrl-group,
+.maplibregl-ctrl-group {
+  background: #ffffff;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+.mapboxgl-ctrl-group button,
+.maplibregl-ctrl-group button {
+  width: 30px;
+  height: 30px;
+  background-color: #ffffff;
+  border: none;
+  cursor: pointer;
+}
+
+.mapboxgl-ctrl-group button:hover {
+  background-color: #f0f0f0;
+}
+
+.mapboxgl-ctrl-group button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Íconos */
+.mapbox-gl-draw_ctrl-draw-btn {
+  background-size: 18px 18px;
+}
+
+/* MUY IMPORTANTE */
+.mapbox-gl-draw,
+.mapbox-gl-draw * {
+  pointer-events: auto !important;
+}
