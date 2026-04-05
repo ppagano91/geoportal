@@ -681,6 +681,7 @@ export function MapViewer(): JSX.Element {
   } | null>(null);
   const [tempFeature, setTempFeature] = useState<GeoJSON.Feature | null>(null);
   const [terrainOn, setTerrainOn] = useState(false);
+  const syncOperationalLayersRef = useRef<(map: Map) => void>(() => {});
 
   // const [features, setFeatures] = useState({});
 
@@ -704,282 +705,25 @@ export function MapViewer(): JSX.Element {
   //   });
   // }, []);
 
-  const styleUrl = useMemo(
-    () => BASEMAPS[state.baseMap as any] ?? BASEMAPS.streets,
-    [state.baseMap],
-  );
+  const styleUrl = useMemo(() => {
+    const selectedBaseMap = BASEMAPS[state.baseMap as keyof typeof BASEMAPS];
+    return selectedBaseMap ?? BASEMAPS.streets;
+  }, [state.baseMap]);
 
-  useEffect(() => {
-    const container = mapContainerRef.current!;
-    const map = new maplibregl.Map({
-      container,
-      style: styleUrl, // pasar URL directamente para que resuelva correctamente assets relativos
-      center: INITIAL_CENTER,
-      zoom: INITIAL_ZOOM,
-      pitch: INITIAL_PITCH,
-      bearing: INITIAL_BEARING,
-      maxZoom: MAX_ZOOM,
-      maxPitch: MAX_PITCH,
-      attributionControl: false,
-    });
-
-    // const draw = new MapboxDraw({
-    //   // displayControlsDefault: false,
-    //   controls: {
-    //     polygon: true,
-    //     line_string: true,
-    //     point: true,
-    //     trash: true,
-    //     undo: true,
-    //     redo: true,
-    //   },
-    //   defaultMode: "simple_select",
-    // });
-
-    (window as any).maplibreglMap = map;
-    mapRef.current = map;
-
-    map.addControl(
-      new maplibregl.NavigationControl({ visualizePitch: true }),
-      "top-right",
-    );
-    map.addControl(
-      new maplibregl.ScaleControl({ unit: "metric" }),
-      "bottom-left",
-    );
-
-    // map.addControl(draw, "top-left");
-
-    // const syncDrawings = () => {
-    //   const data = draw.getAll();
-    //   setDrawings(data);
-    // };
-
-    // map.on("draw.create", onUpdate);
-    // map.on("draw.update", onUpdate);
-    // map.on("draw.delete", onDelete);
-
-    try {
-      map.addControl(
-        new maplibregl.AttributionControl({ compact: true }) as any,
-        "bottom-left",
-      );
-    } catch {}
-    map.addControl(new maplibregl.FullscreenControl());
-    // Geolocate se maneja con botón propio en el stack derecho (no nativo)
-
-    // asegurar que el mapa se reajusta al tamaño del contenedor
-    const ro = new ResizeObserver(() => {
-      try {
-        map.resize();
-      } catch {}
-    });
-    ro.observe(container);
-    const onWinResize = () => {
-      try {
-        map.resize();
-      } catch {}
-    };
-    window.addEventListener("resize", onWinResize);
-    setTimeout(() => {
-      try {
-        map.resize();
-      } catch {}
-    }, 0);
-    setTimeout(() => {
-      try {
-        map.resize();
-      } catch {}
-    }, 300);
-
-    // no fallback de estilo en error
-
-    function onContext(e: MapMouseEvent) {
-      try {
-        (e.originalEvent as MouseEvent).preventDefault();
-      } catch {}
-      const features = map
-        .queryRenderedFeatures(e.point)
-        .filter((f) => !!f.properties);
-      if (features.length > 0) {
-        setPopup({ coord: [e.lngLat.lng, e.lngLat.lat], feature: features[0] });
-      } else {
-        setPopup(null);
-      }
+  const runWhenStyleReady = useCallback((map: Map, cb: () => void) => {
+    if (map.isStyleLoaded()) {
+      cb();
+      return;
     }
-    map.on("contextmenu", onContext);
-    const preventCtx = (ev: Event) => {
-      ev.preventDefault();
+    const onIdle = () => {
+      map.off("idle", onIdle);
+      cb();
     };
-    map.getCanvas().addEventListener("contextmenu", preventCtx);
-
-    map.on("load", () => {
-      try {
-        map.resize();
-      } catch {}
-      // initial layers render
-      state.layers.forEach((l) => addOrUpdateGeoJson(map, l));
-
-      // Terreno (MapTiler Terrain-RGB) + Hillshade + Cielo
-      try {
-        if (!map.getSource("terrain-rgb")) {
-          map.addSource("terrain-rgb", {
-            type: "raster-dem",
-            url: `https://api.maptiler.com/tiles/terrain-rgb/tiles.json?key=${MAPTILER_KEY}`,
-            encoding: "mapbox",
-          } as any);
-        }
-        if (terrainOn) {
-          map.setTerrain({
-            source: "terrain-rgb",
-            exaggeration: TERRAIN_EXAGGERATION,
-          } as any);
-          const beforeId = (map.getStyle() as any)?.layers?.find(
-            (l: any) => l.type === "symbol",
-          )?.id;
-          if (!map.getLayer("hillshade")) {
-            map.addLayer(
-              {
-                id: "hillshade",
-                type: "hillshade",
-                source: "terrain-rgb",
-                paint: {
-                  "hillshade-shadow-color": "#473B24",
-                  "hillshade-highlight-color": "#FFFFFF",
-                  "hillshade-accent-color": "#000000",
-                  "hillshade-illumination-direction": 315,
-                  "hillshade-illumination-anchor": "map",
-                  "hillshade-exaggeration": 1.0,
-                },
-              } as any,
-              beforeId,
-            );
-          }
-          // if (!map.getLayer("sky")) {
-          //   map.addLayer({
-          //     id: "heatmap",
-          //     type: "heatmap",
-          //     source: "heatmap",
-          //     paint: {
-          //       "heatmap-type": "atmosphere",
-          //       "heatmap-atmosphere-sun": [0.0, 0.0],
-          //       "heatmap-atmosphere-sun-intensity": 15,
-          //     },
-          //   } as any);
-          // }
-        }
-        // Edificios 3D
-        if (!map.getSource("vect-maptiler")) {
-          map.addSource("vect-maptiler", {
-            type: "vector",
-            url: `https://api.maptiler.com/tiles/v3/tiles.json?key=${MAPTILER_KEY}`,
-          } as any);
-        }
-        if (!map.getLayer("buildings-3d")) {
-          map.addLayer(
-            {
-              id: "buildings-3d",
-              type: "fill-extrusion",
-              source: "vect-maptiler",
-              "source-layer": "building",
-              minzoom: 14,
-              paint: {
-                "fill-extrusion-color": "#aaa",
-                "fill-extrusion-opacity": 0.9,
-                "fill-extrusion-height": [
-                  "coalesce",
-                  ["get", "render_height"],
-                  0,
-                ],
-                "fill-extrusion-base": 0,
-              },
-            } as any,
-            (map.getStyle() as any)?.layers?.find(
-              (l: any) => l.type === "symbol",
-            )?.id,
-          );
-        }
-      } catch {}
-    });
-
-    return () => {
-      // map.off("draw.create", syncDrawings);
-      // map.off("draw.update", syncDrawings);
-      // map.off("draw.delete", syncDrawings);
-
-      // map.removeControl(draw);
-      map.off("contextmenu", onContext);
-      map.remove();
-      try {
-        ro.disconnect();
-      } catch {}
-      window.removeEventListener("resize", onWinResize);
-      try {
-        map.getCanvas().removeEventListener("contextmenu", preventCtx);
-      } catch {}
-      mapRef.current = null;
-      (window as any).maplibreglMap = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    map.on("idle", onIdle);
   }, []);
 
-  // Cambiar estilo preservando vista (sin mover mapa)
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const center = map.getCenter();
-    const zoom = map.getZoom();
-    const pitch = map.getPitch();
-    const bearing = map.getBearing();
-    map.setStyle(styleUrl as any);
-    map.once("load", () => {
-      try {
-        map.jumpTo({ center, zoom, pitch, bearing });
-      } catch {}
-      // Reaplicar terreno/hillshade si 3D activo
-      try {
-        if (!map.getSource("terrain-rgb")) {
-          map.addSource("terrain-rgb", {
-            type: "raster-dem",
-            url: `https://api.maptiler.com/tiles/terrain-rgb/tiles.json?key=${MAPTILER_KEY}`,
-            encoding: "mapbox",
-          } as any);
-        }
-        if (terrainOn) {
-          map.setTerrain({
-            source: "terrain-rgb",
-            exaggeration: TERRAIN_EXAGGERATION,
-          } as any);
-          const beforeId = (map.getStyle() as any)?.layers?.find(
-            (l: any) => l.type === "symbol",
-          )?.id;
-          if (!map.getLayer("hillshade")) {
-            map.addLayer(
-              {
-                id: "hillshade",
-                type: "hillshade",
-                source: "terrain-rgb",
-                paint: {
-                  "hillshade-shadow-color": "#473B24",
-                  "hillshade-highlight-color": "#FFFFFF",
-                  "hillshade-accent-color": "#000000",
-                  "hillshade-illumination-direction": 315,
-                  "hillshade-illumination-anchor": "map",
-                  "hillshade-exaggeration": 1.0,
-                },
-              } as any,
-              beforeId,
-            );
-          }
-        }
-      } catch {}
-    });
-  }, [styleUrl]);
-
-  // update layers when state changes
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+  // Keep map visual state aligned with sidebar state, especially after setStyle().
+  syncOperationalLayersRef.current = (map: Map) => {
     // drawings sources
     if (!map.getSource("drawings-src")) {
       map.addSource("drawings-src", {
@@ -1108,7 +852,301 @@ export function MapViewer(): JSX.Element {
         } catch {}
       }
     }
-  }, [state.layers, state.drawings, tempFeature]);
+  };
+
+  useEffect(() => {
+    const container = mapContainerRef.current!;
+    const map = new maplibregl.Map({
+      container,
+      style: styleUrl, // pasar URL directamente para que resuelva correctamente assets relativos
+      center: INITIAL_CENTER,
+      zoom: INITIAL_ZOOM,
+      pitch: INITIAL_PITCH,
+      bearing: INITIAL_BEARING,
+      maxZoom: MAX_ZOOM,
+      maxPitch: MAX_PITCH,
+      attributionControl: false,
+    });
+
+    // const draw = new MapboxDraw({
+    //   // displayControlsDefault: false,
+    //   controls: {
+    //     polygon: true,
+    //     line_string: true,
+    //     point: true,
+    //     trash: true,
+    //     undo: true,
+    //     redo: true,
+    //   },
+    //   defaultMode: "simple_select",
+    // });
+
+    (window as any).maplibreglMap = map;
+    mapRef.current = map;
+
+    map.addControl(
+      new maplibregl.NavigationControl({ visualizePitch: true }),
+      "top-right",
+    );
+    map.addControl(
+      new maplibregl.ScaleControl({ unit: "metric" }),
+      "bottom-left",
+    );
+
+    // map.addControl(draw, "top-left");
+
+    // const syncDrawings = () => {
+    //   const data = draw.getAll();
+    //   setDrawings(data);
+    // };
+
+    // map.on("draw.create", onUpdate);
+    // map.on("draw.update", onUpdate);
+    // map.on("draw.delete", onDelete);
+
+    try {
+      map.addControl(
+        new maplibregl.AttributionControl({ compact: true }) as any,
+        "bottom-left",
+      );
+    } catch {}
+    map.addControl(new maplibregl.FullscreenControl());
+    // Geolocate se maneja con botón propio en el stack derecho (no nativo)
+
+    // asegurar que el mapa se reajusta al tamaño del contenedor
+    const ro = new ResizeObserver(() => {
+      try {
+        map.resize();
+      } catch {}
+    });
+    ro.observe(container);
+    const onWinResize = () => {
+      try {
+        map.resize();
+      } catch {}
+    };
+    window.addEventListener("resize", onWinResize);
+    setTimeout(() => {
+      try {
+        map.resize();
+      } catch {}
+    }, 0);
+    setTimeout(() => {
+      try {
+        map.resize();
+      } catch {}
+    }, 300);
+
+    // no fallback de estilo en error
+
+    function onContext(e: MapMouseEvent) {
+      try {
+        (e.originalEvent as MouseEvent).preventDefault();
+      } catch {}
+      const features = map
+        .queryRenderedFeatures(e.point)
+        .filter((f) => !!f.properties);
+      if (features.length > 0) {
+        setPopup({ coord: [e.lngLat.lng, e.lngLat.lat], feature: features[0] });
+      } else {
+        setPopup(null);
+      }
+    }
+    map.on("contextmenu", onContext);
+    const preventCtx = (ev: Event) => {
+      ev.preventDefault();
+    };
+    map.getCanvas().addEventListener("contextmenu", preventCtx);
+
+    const onMapStyleLoad = () => {
+      runWhenStyleReady(map, () => syncOperationalLayersRef.current(map));
+    };
+    map.on("style.load", onMapStyleLoad);
+
+    map.on("load", () => {
+      try {
+        map.resize();
+      } catch {}
+      // initial operational layers render
+      runWhenStyleReady(map, () => syncOperationalLayersRef.current(map));
+
+      // Terreno (MapTiler Terrain-RGB) + Hillshade + Cielo
+      try {
+        if (!map.getSource("terrain-rgb")) {
+          map.addSource("terrain-rgb", {
+            type: "raster-dem",
+            url: `https://api.maptiler.com/tiles/terrain-rgb/tiles.json?key=${MAPTILER_KEY}`,
+            encoding: "mapbox",
+          } as any);
+        }
+        if (terrainOn) {
+          map.setTerrain({
+            source: "terrain-rgb",
+            exaggeration: TERRAIN_EXAGGERATION,
+          } as any);
+          const beforeId = (map.getStyle() as any)?.layers?.find(
+            (l: any) => l.type === "symbol",
+          )?.id;
+          if (!map.getLayer("hillshade")) {
+            map.addLayer(
+              {
+                id: "hillshade",
+                type: "hillshade",
+                source: "terrain-rgb",
+                paint: {
+                  "hillshade-shadow-color": "#473B24",
+                  "hillshade-highlight-color": "#FFFFFF",
+                  "hillshade-accent-color": "#000000",
+                  "hillshade-illumination-direction": 315,
+                  "hillshade-illumination-anchor": "map",
+                  "hillshade-exaggeration": 1.0,
+                },
+              } as any,
+              beforeId,
+            );
+          }
+          // if (!map.getLayer("sky")) {
+          //   map.addLayer({
+          //     id: "heatmap",
+          //     type: "heatmap",
+          //     source: "heatmap",
+          //     paint: {
+          //       "heatmap-type": "atmosphere",
+          //       "heatmap-atmosphere-sun": [0.0, 0.0],
+          //       "heatmap-atmosphere-sun-intensity": 15,
+          //     },
+          //   } as any);
+          // }
+        }
+        // Edificios 3D
+        if (!map.getSource("vect-maptiler")) {
+          map.addSource("vect-maptiler", {
+            type: "vector",
+            url: `https://api.maptiler.com/tiles/v3/tiles.json?key=${MAPTILER_KEY}`,
+          } as any);
+        }
+        if (!map.getLayer("buildings-3d")) {
+          map.addLayer(
+            {
+              id: "buildings-3d",
+              type: "fill-extrusion",
+              source: "vect-maptiler",
+              "source-layer": "building",
+              minzoom: 14,
+              paint: {
+                "fill-extrusion-color": "#aaa",
+                "fill-extrusion-opacity": 0.9,
+                "fill-extrusion-height": [
+                  "coalesce",
+                  ["get", "render_height"],
+                  0,
+                ],
+                "fill-extrusion-base": 0,
+              },
+            } as any,
+            (map.getStyle() as any)?.layers?.find(
+              (l: any) => l.type === "symbol",
+            )?.id,
+          );
+        }
+      } catch {}
+    });
+
+    return () => {
+      // map.off("draw.create", syncDrawings);
+      // map.off("draw.update", syncDrawings);
+      // map.off("draw.delete", syncDrawings);
+
+      // map.removeControl(draw);
+      map.off("contextmenu", onContext);
+      map.off("style.load", onMapStyleLoad);
+      map.remove();
+      try {
+        ro.disconnect();
+      } catch {}
+      window.removeEventListener("resize", onWinResize);
+      try {
+        map.getCanvas().removeEventListener("contextmenu", preventCtx);
+      } catch {}
+      mapRef.current = null;
+      (window as any).maplibreglMap = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Cambiar estilo preservando vista (sin mover mapa)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const center = map.getCenter();
+    const zoom = map.getZoom();
+    const pitch = map.getPitch();
+    const bearing = map.getBearing();
+    let synced = false;
+    const applyAfterStyleReady = () => {
+      if (synced || !map.isStyleLoaded()) return;
+      synced = true;
+      map.off("styledata", applyAfterStyleReady);
+      map.off("idle", applyAfterStyleReady);
+      try {
+        map.jumpTo({ center, zoom, pitch, bearing });
+      } catch {}
+      // Reinject overlay sources/layers removed by setStyle().
+      syncOperationalLayersRef.current(map);
+      // Reaplicar terreno/hillshade si 3D activo
+      try {
+        if (!map.getSource("terrain-rgb")) {
+          map.addSource("terrain-rgb", {
+            type: "raster-dem",
+            url: `https://api.maptiler.com/tiles/terrain-rgb/tiles.json?key=${MAPTILER_KEY}`,
+            encoding: "mapbox",
+          } as any);
+        }
+        if (terrainOn) {
+          map.setTerrain({
+            source: "terrain-rgb",
+            exaggeration: TERRAIN_EXAGGERATION,
+          } as any);
+          const beforeId = (map.getStyle() as any)?.layers?.find(
+            (l: any) => l.type === "symbol",
+          )?.id;
+          if (!map.getLayer("hillshade")) {
+            map.addLayer(
+              {
+                id: "hillshade",
+                type: "hillshade",
+                source: "terrain-rgb",
+                paint: {
+                  "hillshade-shadow-color": "#473B24",
+                  "hillshade-highlight-color": "#FFFFFF",
+                  "hillshade-accent-color": "#000000",
+                  "hillshade-illumination-direction": 315,
+                  "hillshade-illumination-anchor": "map",
+                  "hillshade-exaggeration": 1.0,
+                },
+              } as any,
+              beforeId,
+            );
+          }
+        }
+      } catch {}
+    };
+    map.on("styledata", applyAfterStyleReady);
+    map.on("idle", applyAfterStyleReady);
+    map.setStyle(styleUrl as any);
+
+    return () => {
+      map.off("styledata", applyAfterStyleReady);
+      map.off("idle", applyAfterStyleReady);
+    };
+  }, [styleUrl, runWhenStyleReady]);
+
+  // update layers when state changes
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    runWhenStyleReady(map, () => syncOperationalLayersRef.current(map));
+  }, [state.layers, state.drawings, tempFeature, runWhenStyleReady]);
 
   // drawing interactions
   useEffect(() => {
@@ -1229,7 +1267,7 @@ export function MapViewer(): JSX.Element {
       const { lng, lat } = e.lngLat;
       drawing = { type: state.drawMode, coords: [], start: [lng, lat] };
       try {
-        map.dragPan.disable();
+        map?.dragPan.disable();
       } catch {}
     }
     function onMouseMove(e: MapMouseEvent) {
@@ -1254,7 +1292,7 @@ export function MapViewer(): JSX.Element {
       drawing = null;
       setTempFeature(null);
       try {
-        map.dragPan.enable();
+        map?.dragPan.enable();
       } catch {}
     }
     map.on("click", onClick);
