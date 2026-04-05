@@ -106,7 +106,9 @@
   background-color: hsl(var(--card) / 0.9);
   color: hsl(var(--foreground));
   box-shadow: none;
-  transition: background-color 150ms ease, box-shadow 150ms ease;
+  transition:
+    background-color 150ms ease,
+    box-shadow 150ms ease;
 }
 .maplibregl-ctrl button:hover,
 .maplibregl-ctrl-group > button:hover,
@@ -144,13 +146,20 @@ button.maplibregl-ctrl-custom-reset .maplibregl-ctrl-icon {
   color: black;
 }
 button.maplibregl-ctrl-custom-terrain-on .maplibregl-ctrl-icon {
-  background-image: url("/src/assets/images/controls/terrain_on.svg");
+  /* background-image: url("/src/assets/images/controls/terrain_on.svg"); */
   color: black !important;
   background-color: rgb(60, 150, 60) !important;
 }
 button.maplibregl-ctrl-custom-terrain-off .maplibregl-ctrl-icon {
-  background-image: url("/src/assets/images/controls/terrain_off.svg");
+  /* background-image: url("/src/assets/images/controls/terrain_off.svg"); */
   color: black !important;
+}
+button.maplibregl-ctrl-custom-buildings-on .maplibregl-ctrl-icon {
+  background-color: rgb(60, 150, 60) !important;
+  color: #ffffff !important;
+}
+button.maplibregl-ctrl-custom-buildings-off {
+  color: hsl(var(--foreground));
 }
 .maplibregl-ctrl-custom-top-right {
   position: absolute;

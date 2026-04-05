@@ -17,6 +17,8 @@ import type { Layer } from "../../types/geoportal";
 import { MiniMap } from "./MiniMap";
 import { MapControls } from "./MapControls";
 import { env } from "../../config/env";
+import buildingsIcon from "../../assets/images/buildings.svg";
+import reliefIcon from "../../assets/images/relief.svg";
 
 // import MapboxDraw from "@mapbox/mapbox-gl-draw";
 
@@ -97,9 +99,52 @@ const MAX_PITCH = 85;
 const TERRAIN_EXAGGERATION = 1;
 const MAPTILER_KEY = env.MAPTILER_KEY;
 const LAYER_CFG_CACHE_KEY = "__layerCfgCache";
+const BUILDINGS_3D_SOURCE_ID = "vect-maptiler";
+const BUILDINGS_3D_LAYER_ID = "buildings-3d";
 
 function getCfgCache(map: Map): Record<string, string> {
   return ((map as any)[LAYER_CFG_CACHE_KEY] ??= {});
+}
+
+function ensureBuildings3DLayer(map: Map) {
+  if (!map.getSource(BUILDINGS_3D_SOURCE_ID)) {
+    map.addSource(BUILDINGS_3D_SOURCE_ID, {
+      type: "vector",
+      url: `https://api.maptiler.com/tiles/v3/tiles.json?key=${MAPTILER_KEY}`,
+    } as any);
+  }
+  if (!map.getLayer(BUILDINGS_3D_LAYER_ID)) {
+    map.addLayer(
+      {
+        id: BUILDINGS_3D_LAYER_ID,
+        type: "fill-extrusion",
+        source: BUILDINGS_3D_SOURCE_ID,
+        "source-layer": "building",
+        minzoom: 14,
+        paint: {
+          "fill-extrusion-color": "#aaa",
+          "fill-extrusion-opacity": 0.9,
+          "fill-extrusion-height": ["coalesce", ["get", "render_height"], 0],
+          "fill-extrusion-base": 0,
+        },
+      } as any,
+      (map.getStyle() as any)?.layers?.find((l: any) => l.type === "symbol")
+        ?.id,
+    );
+  }
+}
+
+function applyBuildings3DState(map: Map, enabled: boolean) {
+  if (enabled) {
+    ensureBuildings3DLayer(map);
+    if (map.getLayer(BUILDINGS_3D_LAYER_ID)) {
+      map.setLayoutProperty(BUILDINGS_3D_LAYER_ID, "visibility", "visible");
+    }
+    return;
+  }
+  if (map.getLayer(BUILDINGS_3D_LAYER_ID)) {
+    map.setLayoutProperty(BUILDINGS_3D_LAYER_ID, "visibility", "none");
+  }
 }
 
 function addOrUpdateGeoJson(map: Map, layer: Layer) {
@@ -681,6 +726,7 @@ export function MapViewer(): JSX.Element {
   } | null>(null);
   const [tempFeature, setTempFeature] = useState<GeoJSON.Feature | null>(null);
   const [terrainOn, setTerrainOn] = useState(false);
+  const [buildings3DEnabled, setBuildings3DEnabled] = useState(true);
   const syncOperationalLayersRef = useRef<(map: Map) => void>(() => {});
 
   // const [features, setFeatures] = useState({});
@@ -1018,37 +1064,7 @@ export function MapViewer(): JSX.Element {
           //   } as any);
           // }
         }
-        // Edificios 3D
-        if (!map.getSource("vect-maptiler")) {
-          map.addSource("vect-maptiler", {
-            type: "vector",
-            url: `https://api.maptiler.com/tiles/v3/tiles.json?key=${MAPTILER_KEY}`,
-          } as any);
-        }
-        if (!map.getLayer("buildings-3d")) {
-          map.addLayer(
-            {
-              id: "buildings-3d",
-              type: "fill-extrusion",
-              source: "vect-maptiler",
-              "source-layer": "building",
-              minzoom: 14,
-              paint: {
-                "fill-extrusion-color": "#aaa",
-                "fill-extrusion-opacity": 0.9,
-                "fill-extrusion-height": [
-                  "coalesce",
-                  ["get", "render_height"],
-                  0,
-                ],
-                "fill-extrusion-base": 0,
-              },
-            } as any,
-            (map.getStyle() as any)?.layers?.find(
-              (l: any) => l.type === "symbol",
-            )?.id,
-          );
-        }
+        applyBuildings3DState(map, buildings3DEnabled);
       } catch {}
     });
 
@@ -1129,6 +1145,7 @@ export function MapViewer(): JSX.Element {
             );
           }
         }
+        applyBuildings3DState(map, buildings3DEnabled);
       } catch {}
     };
     map.on("styledata", applyAfterStyleReady);
@@ -1140,6 +1157,16 @@ export function MapViewer(): JSX.Element {
       map.off("idle", applyAfterStyleReady);
     };
   }, [styleUrl, runWhenStyleReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    runWhenStyleReady(map, () => {
+      try {
+        applyBuildings3DState(map, buildings3DEnabled);
+      } catch {}
+    });
+  }, [buildings3DEnabled, runWhenStyleReady]);
 
   // update layers when state changes
   useEffect(() => {
@@ -1428,7 +1455,34 @@ export function MapViewer(): JSX.Element {
               } catch {}
             }}
           >
-            <span className="maplibregl-ctrl-icon"></span>
+            {/* <span className="maplibregl-ctrl-icon"></span> */}
+            <img
+              src={reliefIcon}
+              alt="Relieve"
+              className="maplibregl-ctrl-icon"
+            />
+          </button>
+        </div>
+        {/* Edificios 3D */}
+        <div className="maplibregl-ctrl maplibregl-ctrl-group">
+          <button
+            className={
+              buildings3DEnabled
+                ? "maplibregl-ctrl-custom-buildings-on"
+                : "maplibregl-ctrl-custom-buildings-off"
+            }
+            title={
+              buildings3DEnabled
+                ? "Desactivar edificios 3D"
+                : "Activar edificios 3D"
+            }
+            onClick={() => setBuildings3DEnabled((prev) => !prev)}
+          >
+            <img
+              src={buildingsIcon}
+              alt="Edificios 3D"
+              className="maplibregl-ctrl-icon"
+            />
           </button>
         </div>
       </div>
