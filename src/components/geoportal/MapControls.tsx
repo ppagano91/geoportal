@@ -1,29 +1,30 @@
 import React, { useContext, useState } from "react";
 import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import { Button } from "../ui/Button";
-import {
-  Circle,
-  Home,
-  PencilRuler,
-  Pointer,
-  Route,
-  Square,
-  Triangle,
-  Eraser,
-  Save,
-  Compass,
-  ChevronDown,
-  ChevronUp,
-} from "lucide-react";
-import maplibregl from "maplibre-gl";
+import { PencilRuler, Eraser, Save } from "lucide-react";
+import pointIcon from "../../assets/images/point.svg";
+import lineIcon from "../../assets/images/line.svg";
+import polygonIcon from "../../assets/images/polygon.svg";
+import squareIcon from "../../assets/images/square.svg";
+import circleIcon from "../../assets/images/circle.svg";
 
 export function MapControls(): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
   const { state, dispatch } = ctx;
-  const map: any = (window as any).maplibreglMap;
   const [openDraw, setOpenDraw] = useState(true);
+
+  function DrawModeIcon({
+    src,
+    alt,
+  }: {
+    src: string;
+    alt: string;
+  }): JSX.Element {
+    return <img src={src} alt={alt} className="h-5 w-5 object-contain" />;
+  }
+
   return (
-    <div className="surface p-2 flex flex-col gap-2">
+    <div className="surface flex flex-col p-1">
       {/* <div className="flex gap-2">
         <Button
           title="Volver a vista inicial"
@@ -54,14 +55,10 @@ export function MapControls(): JSX.Element {
         </Button>        
       </div> */}
       <div className="">
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-xs text-muted-foreground">Dibujo</div>
+        <div className="flex items-center justify-between">
+          {openDraw && <div className="text-sm">Herramientas de Dibujo</div>}
           <button className="text-xs" onClick={() => setOpenDraw((v) => !v)}>
-            {openDraw ? (
-              <ChevronDown className="h-4 w-4" />
-            ) : (
-              <ChevronUp className="h-4 w-4" />
-            )}
+            🖍
           </button>
         </div>
         {openDraw && (
@@ -78,7 +75,7 @@ export function MapControls(): JSX.Element {
                   })
                 }
               >
-                <Pointer className="h-4 w-4" />
+                <DrawModeIcon src={pointIcon} alt="Punto" />
               </Button>
               <Button
                 title="Dibujar línea (doble clic para terminar)"
@@ -91,7 +88,7 @@ export function MapControls(): JSX.Element {
                   })
                 }
               >
-                <Route className="h-4 w-4" />
+                <DrawModeIcon src={lineIcon} alt="Línea" />
               </Button>
               <Button
                 title="Dibujar polígono (doble clic para terminar)"
@@ -104,7 +101,7 @@ export function MapControls(): JSX.Element {
                   })
                 }
               >
-                <Triangle className="h-4 w-4" />
+                <DrawModeIcon src={polygonIcon} alt="Polígono" />
               </Button>
               <Button
                 title="Dibujar rectángulo (arrastrar)"
@@ -119,7 +116,7 @@ export function MapControls(): JSX.Element {
                   })
                 }
               >
-                <Square className="h-4 w-4" />
+                <DrawModeIcon src={squareIcon} alt="Rectángulo" />
               </Button>
               <Button
                 title="Dibujar círculo (arrastrar)"
@@ -132,7 +129,7 @@ export function MapControls(): JSX.Element {
                   })
                 }
               >
-                <Circle className="h-4 w-4" />
+                <DrawModeIcon src={circleIcon} alt="Círculo" />
               </Button>
               <Button
                 title="Salir de modo dibujo"

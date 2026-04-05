@@ -680,7 +680,7 @@ export function MapViewer(): JSX.Element {
     feature: any;
   } | null>(null);
   const [tempFeature, setTempFeature] = useState<GeoJSON.Feature | null>(null);
-  const [terrainOn, setTerrainOn] = useState(true);
+  const [terrainOn, setTerrainOn] = useState(false);
 
   // const [features, setFeatures] = useState({});
 
