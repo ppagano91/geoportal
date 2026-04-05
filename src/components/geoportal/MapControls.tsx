@@ -11,7 +11,7 @@ import circleIcon from "../../assets/images/circle.svg";
 export function MapControls(): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
   const { state, dispatch } = ctx;
-  const [openDraw, setOpenDraw] = useState(true);
+  const [openDraw, setOpenDraw] = useState(false);
 
   function DrawModeIcon({
     src,
@@ -20,7 +20,13 @@ export function MapControls(): JSX.Element {
     src: string;
     alt: string;
   }): JSX.Element {
-    return <img src={src} alt={alt} className="h-5 w-5 object-contain" />;
+    return (
+      <img
+        src={src}
+        alt={alt}
+        className="h-5 w-5 object-contain dark:invert"
+      />
+    );
   }
 
   return (

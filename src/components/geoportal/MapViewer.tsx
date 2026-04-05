@@ -726,7 +726,7 @@ export function MapViewer(): JSX.Element {
   } | null>(null);
   const [tempFeature, setTempFeature] = useState<GeoJSON.Feature | null>(null);
   const [terrainOn, setTerrainOn] = useState(false);
-  const [buildings3DEnabled, setBuildings3DEnabled] = useState(true);
+  const [buildings3DEnabled, setBuildings3DEnabled] = useState(false);
   const syncOperationalLayersRef = useRef<(map: Map) => void>(() => {});
 
   // const [features, setFeatures] = useState({});

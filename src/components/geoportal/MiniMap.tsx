@@ -6,7 +6,7 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 export function MiniMap({ styleUrl }: { styleUrl: string }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
