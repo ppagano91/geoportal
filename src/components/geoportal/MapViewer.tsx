@@ -8,6 +8,12 @@ import React, {
 } from "react";
 import maplibregl, { Map, MapMouseEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import {
+  MaplibreTerradrawControl,
+  type TerradrawMode,
+} from "@watergis/maplibre-gl-terradraw";
+import "@watergis/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css";
+import type { TerraDraw } from "terra-draw";
 import { RotateCcw, LocateFixed } from "lucide-react";
 import { cn } from "../../utils/cn";
 import { GeoPortalContext } from "../../shell/GeoPortalApp";
@@ -675,6 +681,8 @@ export function MapViewer(): JSX.Element {
   const { state } = ctx;
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
+  const terradrawControlRef = useRef<MaplibreTerradrawControl | null>(null);
+  const terradrawInstanceRef = useRef<TerraDraw | undefined>(undefined);
   const drawRef = useRef(null);
   const [popup, setPopup] = useState<{
     coord: [number, number];
@@ -749,6 +757,38 @@ export function MapViewer(): JSX.Element {
       new maplibregl.ScaleControl({ unit: "metric" }),
       "bottom-left"
     );
+
+    const terradrawModes: TerradrawMode[] = [
+      "point",
+      "linestring",
+      "polygon",
+      "rectangle",
+      "circle",
+      "freehand",
+      "angled-rectangle",
+      "select",
+      "delete-selection",
+      "delete",
+      "download",
+    ];
+    const terradrawControl = new MaplibreTerradrawControl({
+      modes: terradrawModes,
+      open: true,
+    });
+    terradrawControlRef.current = terradrawControl;
+    map.addControl(terradrawControl, "top-left");
+    const terradrawInstance = terradrawControl.getTerraDrawInstance();
+    terradrawInstanceRef.current = terradrawInstance;
+    const startTerraDraw = () => {
+      try {
+        terradrawInstanceRef.current?.stop();
+      } catch {}
+      try {
+        terradrawInstanceRef.current?.start();
+      } catch {}
+    };
+    if (map.isStyleLoaded()) startTerraDraw();
+    else map.once("load", startTerraDraw);
 
     // map.addControl(draw, "top-left");
 
@@ -909,6 +949,12 @@ export function MapViewer(): JSX.Element {
       // map.off("draw.update", syncDrawings);
       // map.off("draw.delete", syncDrawings);
 
+      if (terradrawControlRef.current) {
+        try {
+          map.removeControl(terradrawControlRef.current);
+        } catch {}
+        terradrawControlRef.current = null;
+      }
       // map.removeControl(draw);
       map.off("contextmenu", onContext);
       map.remove();
@@ -937,6 +983,12 @@ export function MapViewer(): JSX.Element {
     map.once("load", () => {
       try {
         map.jumpTo({ center, zoom, pitch, bearing });
+      } catch {}
+      try {
+        terradrawInstanceRef.current?.stop();
+      } catch {}
+      try {
+        terradrawInstanceRef.current?.start();
       } catch {}
       // Reaplicar terreno/hillshade si 3D activo
       try {
