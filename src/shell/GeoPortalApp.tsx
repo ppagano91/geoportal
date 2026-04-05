@@ -36,6 +36,35 @@ const initialState: GeoPortalState = {
 	wmsDialogOpen: false
 }
 
+function inferGeometryType(fc: GeoJSON.FeatureCollection): Layer['geometryType'] {
+	for (const f of fc.features) {
+		const t = f.geometry?.type
+		if (
+			t &&
+			(t === 'Point' ||
+				t === 'MultiPoint' ||
+				t === 'LineString' ||
+				t === 'MultiLineString' ||
+				t === 'Polygon' ||
+				t === 'MultiPolygon')
+		) {
+			return t
+		}
+	}
+	return undefined
+}
+
+function nextDrawingLayerName(layers: Layer[]): string {
+	const used = new Set(
+		layers
+			.filter((l) => l.type === 'drawing')
+			.map((l) => l.name.trim().toLowerCase())
+	)
+	let n = 1
+	while (used.has(`dibujo ${n}`)) n += 1
+	return `Dibujo ${n}`
+}
+
 function reducer(state: GeoPortalState, action: Action): GeoPortalState {
 	switch (action.type) {
 		case 'toggleSidebar':
@@ -72,15 +101,18 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
 		case 'clearDrawings':
 			return { ...state, drawings: { type: 'FeatureCollection', features: [] } }
 		case 'saveDrawingsAsLayer': {
-			if (state.drawings.features.length === 0) return state
 			const id = crypto.randomUUID()
+			const drawingData: GeoJSON.FeatureCollection = {
+				type: 'FeatureCollection',
+				features: [...state.drawings.features]
+			}
 			const layer: Layer = {
 				id,
-				name: 'Dibujos',
-				type: 'user',
+				name: nextDrawingLayerName(state.layers),
+				type: 'drawing',
 				visible: true,
-				data: state.drawings,
-				geometryType: undefined,
+				data: drawingData,
+				geometryType: inferGeometryType(drawingData),
 				pointStyle: { type: 'circle', size: 10, color: '#0ea5e9', strokeColor: '#0b87bf', strokeWidth: 1.5 },
 				lineStyle: { color: '#0ea5e9', width: 2, lineCap: 'round' },
 				polygonStyle: { fillColor: '#0ea5e9', fillOpacity: 0.2, strokeColor: '#0ea5e9', strokeWidth: 1.5 }

@@ -8,12 +8,6 @@ import React, {
 } from "react";
 import maplibregl, { Map, MapMouseEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import {
-  MaplibreTerradrawControl,
-  type TerradrawMode,
-} from "@watergis/maplibre-gl-terradraw";
-import "@watergis/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css";
-import type { TerraDraw } from "terra-draw";
 import { RotateCcw, LocateFixed } from "lucide-react";
 import { cn } from "../../utils/cn";
 import { GeoPortalContext } from "../../shell/GeoPortalApp";
@@ -295,7 +289,7 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
         map.setPaintProperty(
           clusterLayerId,
           "circle-color",
-          layer.pointStyle.color
+          layer.pointStyle.color,
         );
       }
       if (!map.getLayer(clusterTextId)) {
@@ -314,12 +308,12 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
       map.setLayoutProperty(
         clusterLayerId,
         "visibility",
-        layer.visible ? "visible" : "none"
+        layer.visible ? "visible" : "none",
       );
       map.setLayoutProperty(
         clusterTextId,
         "visibility",
-        layer.visible ? "visible" : "none"
+        layer.visible ? "visible" : "none",
       );
     } else {
       if (map.getLayer(clusterLayerId))
@@ -357,28 +351,28 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
           map.setPaintProperty(
             ptUnclusterCircleId,
             "circle-radius",
-            layer.pointStyle.size
+            layer.pointStyle.size,
           );
           map.setPaintProperty(
             ptUnclusterCircleId,
             "circle-color",
-            layer.pointStyle.color
+            layer.pointStyle.color,
           );
           map.setPaintProperty(
             ptUnclusterCircleId,
             "circle-stroke-color",
-            layer.pointStyle.strokeColor
+            layer.pointStyle.strokeColor,
           );
           map.setPaintProperty(
             ptUnclusterCircleId,
             "circle-stroke-width",
-            layer.pointStyle.strokeWidth
+            layer.pointStyle.strokeWidth,
           );
         }
         map.setLayoutProperty(
           ptUnclusterCircleId,
           "visibility",
-          layer.visible ? "visible" : "none"
+          layer.visible ? "visible" : "none",
         );
         // hide simple circle
         if (map.getLayer(pointLayerId))
@@ -406,28 +400,28 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
           map.setPaintProperty(
             pointLayerId,
             "circle-radius",
-            layer.pointStyle.size
+            layer.pointStyle.size,
           );
           map.setPaintProperty(
             pointLayerId,
             "circle-color",
-            layer.pointStyle.color
+            layer.pointStyle.color,
           );
           map.setPaintProperty(
             pointLayerId,
             "circle-stroke-color",
-            layer.pointStyle.strokeColor
+            layer.pointStyle.strokeColor,
           );
           map.setPaintProperty(
             pointLayerId,
             "circle-stroke-width",
-            layer.pointStyle.strokeWidth
+            layer.pointStyle.strokeWidth,
           );
         }
         map.setLayoutProperty(
           pointLayerId,
           "visibility",
-          layer.visible ? "visible" : "none"
+          layer.visible ? "visible" : "none",
         );
         // hide uncluster alternatives
         if (map.getLayer(ptUnclusterCircleId))
@@ -466,7 +460,7 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
         map.setLayoutProperty(
           ptUnclusterSymbolId,
           "visibility",
-          layer.visible ? "visible" : "none"
+          layer.visible ? "visible" : "none",
         );
         // hide simple symbol
         if (map.getLayer(pointSymId))
@@ -495,7 +489,7 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
         map.setLayoutProperty(
           pointSymId,
           "visibility",
-          layer.visible ? "visible" : "none"
+          layer.visible ? "visible" : "none",
         );
         // hide uncluster symbol
         if (map.getLayer(ptUnclusterSymbolId))
@@ -537,13 +531,13 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
       map.setLayoutProperty(
         lineLayerId,
         "line-cap",
-        layer.lineStyle.lineCap ?? "butt"
+        layer.lineStyle.lineCap ?? "butt",
       );
     }
     map.setLayoutProperty(
       lineLayerId,
       "visibility",
-      layer.visible ? "visible" : "none"
+      layer.visible ? "visible" : "none",
     );
   }
 
@@ -568,18 +562,18 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
       map.setPaintProperty(
         polyFillId,
         "fill-color",
-        layer.polygonStyle.fillColor
+        layer.polygonStyle.fillColor,
       );
       map.setPaintProperty(
         polyFillId,
         "fill-opacity",
-        layer.polygonStyle.fillOpacity
+        layer.polygonStyle.fillOpacity,
       );
     }
     map.setLayoutProperty(
       polyFillId,
       "visibility",
-      layer.visible ? "visible" : "none"
+      layer.visible ? "visible" : "none",
     );
 
     if (!map.getLayer(polyLineId)) {
@@ -601,18 +595,18 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
       map.setPaintProperty(
         polyLineId,
         "line-color",
-        layer.polygonStyle.strokeColor
+        layer.polygonStyle.strokeColor,
       );
       map.setPaintProperty(
         polyLineId,
         "line-width",
-        layer.polygonStyle.strokeWidth
+        layer.polygonStyle.strokeWidth,
       );
     }
     map.setLayoutProperty(
       polyLineId,
       "visibility",
-      layer.visible ? "visible" : "none"
+      layer.visible ? "visible" : "none",
     );
   }
 }
@@ -637,7 +631,7 @@ function wmsTileTemplate(url: string, layers: string): string {
   // WMS 1.1.1 with EPSG:3857 tile BBOX template
   const sep = url.includes("?") ? "&" : "?";
   return `${url}${sep}service=WMS&version=1.1.1&request=GetMap&layers=${encodeURIComponent(
-    layers
+    layers,
   )}&styles=&format=image/png&transparent=true&srs=EPSG:3857&width=256&height=256&bbox={bbox-epsg-3857}`;
 }
 
@@ -665,7 +659,7 @@ function addOrUpdateWms(map: Map, layer: Layer) {
   map.setLayoutProperty(
     layerId,
     "visibility",
-    layer.visible ? "visible" : "none"
+    layer.visible ? "visible" : "none",
   );
 }
 
@@ -681,14 +675,10 @@ export function MapViewer(): JSX.Element {
   const { state } = ctx;
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
-  const terradrawControlRef = useRef<MaplibreTerradrawControl | null>(null);
-  const terradrawInstanceRef = useRef<TerraDraw | undefined>(undefined);
-  const drawRef = useRef(null);
   const [popup, setPopup] = useState<{
     coord: [number, number];
     feature: any;
   } | null>(null);
-  const [drawings, setDrawings] = useState(null);
   const [tempFeature, setTempFeature] = useState<GeoJSON.Feature | null>(null);
   const [terrainOn, setTerrainOn] = useState(true);
 
@@ -716,7 +706,7 @@ export function MapViewer(): JSX.Element {
 
   const styleUrl = useMemo(
     () => BASEMAPS[state.baseMap as any] ?? BASEMAPS.streets,
-    [state.baseMap]
+    [state.baseMap],
   );
 
   useEffect(() => {
@@ -751,44 +741,12 @@ export function MapViewer(): JSX.Element {
 
     map.addControl(
       new maplibregl.NavigationControl({ visualizePitch: true }),
-      "top-right"
+      "top-right",
     );
     map.addControl(
       new maplibregl.ScaleControl({ unit: "metric" }),
-      "bottom-left"
+      "bottom-left",
     );
-
-    const terradrawModes: TerradrawMode[] = [
-      "point",
-      "linestring",
-      "polygon",
-      "rectangle",
-      "circle",
-      "freehand",
-      "angled-rectangle",
-      "select",
-      "delete-selection",
-      "delete",
-      "download",
-    ];
-    const terradrawControl = new MaplibreTerradrawControl({
-      modes: terradrawModes,
-      open: true,
-    });
-    terradrawControlRef.current = terradrawControl;
-    map.addControl(terradrawControl, "top-left");
-    const terradrawInstance = terradrawControl.getTerraDrawInstance();
-    terradrawInstanceRef.current = terradrawInstance;
-    const startTerraDraw = () => {
-      try {
-        terradrawInstanceRef.current?.stop();
-      } catch {}
-      try {
-        terradrawInstanceRef.current?.start();
-      } catch {}
-    };
-    if (map.isStyleLoaded()) startTerraDraw();
-    else map.once("load", startTerraDraw);
 
     // map.addControl(draw, "top-left");
 
@@ -804,7 +762,7 @@ export function MapViewer(): JSX.Element {
     try {
       map.addControl(
         new maplibregl.AttributionControl({ compact: true }) as any,
-        "bottom-left"
+        "bottom-left",
       );
     } catch {}
     map.addControl(new maplibregl.FullscreenControl());
@@ -877,7 +835,7 @@ export function MapViewer(): JSX.Element {
             exaggeration: TERRAIN_EXAGGERATION,
           } as any);
           const beforeId = (map.getStyle() as any)?.layers?.find(
-            (l: any) => l.type === "symbol"
+            (l: any) => l.type === "symbol",
           )?.id;
           if (!map.getLayer("hillshade")) {
             map.addLayer(
@@ -894,21 +852,21 @@ export function MapViewer(): JSX.Element {
                   "hillshade-exaggeration": 1.0,
                 },
               } as any,
-              beforeId
+              beforeId,
             );
           }
-          if (!map.getLayer("sky")) {
-            map.addLayer({
-              id: "heatmap",
-              type: "heatmap",
-              source: "heatmap",
-              paint: {
-                "heatmap-type": "atmosphere",
-                "heatmap-atmosphere-sun": [0.0, 0.0],
-                "heatmap-atmosphere-sun-intensity": 15,
-              },
-            } as any);
-          }
+          // if (!map.getLayer("sky")) {
+          //   map.addLayer({
+          //     id: "heatmap",
+          //     type: "heatmap",
+          //     source: "heatmap",
+          //     paint: {
+          //       "heatmap-type": "atmosphere",
+          //       "heatmap-atmosphere-sun": [0.0, 0.0],
+          //       "heatmap-atmosphere-sun-intensity": 15,
+          //     },
+          //   } as any);
+          // }
         }
         // Edificios 3D
         if (!map.getSource("vect-maptiler")) {
@@ -937,8 +895,8 @@ export function MapViewer(): JSX.Element {
               },
             } as any,
             (map.getStyle() as any)?.layers?.find(
-              (l: any) => l.type === "symbol"
-            )?.id
+              (l: any) => l.type === "symbol",
+            )?.id,
           );
         }
       } catch {}
@@ -949,12 +907,6 @@ export function MapViewer(): JSX.Element {
       // map.off("draw.update", syncDrawings);
       // map.off("draw.delete", syncDrawings);
 
-      if (terradrawControlRef.current) {
-        try {
-          map.removeControl(terradrawControlRef.current);
-        } catch {}
-        terradrawControlRef.current = null;
-      }
       // map.removeControl(draw);
       map.off("contextmenu", onContext);
       map.remove();
@@ -984,12 +936,6 @@ export function MapViewer(): JSX.Element {
       try {
         map.jumpTo({ center, zoom, pitch, bearing });
       } catch {}
-      try {
-        terradrawInstanceRef.current?.stop();
-      } catch {}
-      try {
-        terradrawInstanceRef.current?.start();
-      } catch {}
       // Reaplicar terreno/hillshade si 3D activo
       try {
         if (!map.getSource("terrain-rgb")) {
@@ -1005,7 +951,7 @@ export function MapViewer(): JSX.Element {
             exaggeration: TERRAIN_EXAGGERATION,
           } as any);
           const beforeId = (map.getStyle() as any)?.layers?.find(
-            (l: any) => l.type === "symbol"
+            (l: any) => l.type === "symbol",
           )?.id;
           if (!map.getLayer("hillshade")) {
             map.addLayer(
@@ -1022,7 +968,7 @@ export function MapViewer(): JSX.Element {
                   "hillshade-exaggeration": 1.0,
                 },
               } as any,
-              beforeId
+              beforeId,
             );
           }
         }
@@ -1149,7 +1095,7 @@ export function MapViewer(): JSX.Element {
         `pt-${l.id}`,
         `pt-sym-${l.id}`,
         `pt-un-${l.id}`,
-        `pt-us-${l.id}`
+        `pt-us-${l.id}`,
       );
       return ids.filter((id) => map.getLayer(id));
     }
@@ -1202,7 +1148,7 @@ export function MapViewer(): JSX.Element {
     }
     function rectFrom(
       a: [number, number],
-      b: [number, number]
+      b: [number, number],
     ): GeoJSON.Feature {
       const minX = Math.min(a[0], b[0]),
         maxX = Math.max(a[0], b[0]);
@@ -1220,7 +1166,7 @@ export function MapViewer(): JSX.Element {
     function circleFrom(
       center: [number, number],
       edge: [number, number],
-      steps = 64
+      steps = 64,
     ): GeoJSON.Feature {
       // approximate circle using lng/lat degrees naive (ok for small radius)
       const dx = edge[0] - center[0];
@@ -1334,9 +1280,9 @@ export function MapViewer(): JSX.Element {
       <div ref={mapContainerRef} className="absolute inset-0 h-full w-full" />
 
       {/* Izquierda: SOLO Dibujo */}
-      {/* <div className="absolute top-3 left-3 z-20">
+      <div className="absolute top-3 left-3 z-20">
         <MapControls />
-      </div> */}
+      </div>
 
       {/* Derecha: todos los demás controles, en columna (debajo de los nativos) */}
       <div className="maplibregl-ctrl-top-right maplibregl-ctrl-custom-top-right">
@@ -1362,7 +1308,7 @@ export function MapViewer(): JSX.Element {
                     });
                   } catch {}
                 },
-                () => {}
+                () => {},
               );
             }}
           >
@@ -1418,7 +1364,7 @@ export function MapViewer(): JSX.Element {
                   } as any);
                   if (!map.getLayer("hillshade")) {
                     const beforeId = (map.getStyle() as any)?.layers?.find(
-                      (l: any) => l.type === "symbol"
+                      (l: any) => l.type === "symbol",
                     )?.id;
                     map.addLayer(
                       {
@@ -1434,7 +1380,7 @@ export function MapViewer(): JSX.Element {
                           "hillshade-exaggeration": 1.0,
                         },
                       } as any,
-                      beforeId
+                      beforeId,
                     );
                   }
                 } else {

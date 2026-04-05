@@ -47,7 +47,7 @@ export interface Layer {
 	id: string
 	name: string
 	visible: boolean
-	type: 'base' | 'user' | 'system' | 'wms'
+	type: 'base' | 'user' | 'system' | 'wms' | 'drawing'
 	data?: GeoJSON.FeatureCollection
 	geometryType?: GeometryType
 	pointStyle?: PointStyle

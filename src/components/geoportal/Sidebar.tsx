@@ -172,7 +172,11 @@ export function Sidebar(): JSX.Element {
               >
                 <div className="font-medium">{l.name}</div>
                 <div className="text-xs text-muted-foreground">
-                  {l.type === "wms" ? "WMS" : l.geometryType ?? "Desconocido"}
+                  {l.type === "wms"
+                    ? "WMS"
+                    : l.type === "drawing"
+                    ? `Dibujo · ${l.geometryType ?? "Desconocido"}`
+                    : l.geometryType ?? "Desconocido"}
                 </div>
               </button>
               <div className="flex items-center gap-1">
