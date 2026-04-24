@@ -218,13 +218,6 @@ export function GeoPortalApp(): JSX.Element {
           className={`relative h-full overflow-hidden border-r ${state.sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
         >
           <Sidebar />
-          <button
-            title={state.sidebarOpen ? "Contraer" : "Expandir"}
-            className="absolute top-1/2 -right-3 transform -translate-y-1/2 surface h-6 w-6 flex items-center justify-center"
-            onClick={() => dispatch({ type: "toggleSidebar" })}
-          >
-            <span className="text-xs">{state.sidebarOpen ? "<" : ">"}</span>
-          </button>
         </aside>
         <main className="h-full flex flex-col">
           <Header />
