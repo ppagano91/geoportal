@@ -8,6 +8,8 @@ import React, {
 } from "react";
 import maplibregl, { Map, MapMouseEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { RotateCcw, LocateFixed } from "lucide-react";
 import { cn } from "../../utils/cn";
 import { GeoPortalContext } from "../../shell/GeoPortalApp";
@@ -101,6 +103,26 @@ const MAPTILER_KEY = env.MAPTILER_KEY;
 const LAYER_CFG_CACHE_KEY = "__layerCfgCache";
 const BUILDINGS_3D_SOURCE_ID = "vect-maptiler";
 const BUILDINGS_3D_LAYER_ID = "buildings-3d";
+const TREES_3D_LAYER_ID = "trees-3d-custom";
+const TREES_DATA_URL = "/data/arbolado.geojson";
+const TREE_MODELS = [
+  "/data/glb/Tree.glb",
+  "/data/glb/Tree_4.glb",
+  "/data/glb/Tree.glb",
+];
+const TREES_MAX_VISIBLE = 200;
+const TREES_MIN_ZOOM = 16;
+const TREES_DEBUG_FIXED = true;
+const TREES_DEBUG_COORD: [number, number] = [-58.3816, -34.6037];
+const TREES_DEBUG_ALT_METERS = 18;
+
+type TreeFeature = {
+  id: string;
+  lng: number;
+  lat: number;
+  alt: number;
+  modelIndex: number;
+};
 
 function getCfgCache(map: Map): Record<string, string> {
   return ((map as any)[LAYER_CFG_CACHE_KEY] ??= {});
@@ -715,6 +737,281 @@ function removeWms(map: Map, layerId: string) {
   if (map.getSource(sid)) map.removeSource(sid);
 }
 
+class Trees3DCustomLayer {
+  id = TREES_3D_LAYER_ID;
+  type: "custom" = "custom";
+  renderingMode: "3d" = "3d";
+  private map: Map | null = null;
+  private camera = new THREE.Camera();
+  private scene = new THREE.Scene();
+  private renderer: THREE.WebGLRenderer | null = null;
+  private rootGroup = new THREE.Group();
+  private features: TreeFeature[] = [];
+  private visibleFeatures: TreeFeature[] = [];
+  private modelCache = new globalThis.Map<number, Promise<THREE.Group>>();
+  private loader = new GLTFLoader();
+  private enabled = true;
+  private debugFixedTreeEnabled = TREES_DEBUG_FIXED;
+  private onMoveEnd = () => this.updateVisibleByViewport();
+  private onZoomEnd = () => this.updateVisibleByViewport();
+
+  constructor() {
+    const ambient = new THREE.AmbientLight(0xffffff, 0.75);
+    const directional = new THREE.DirectionalLight(0xffffff, 0.85);
+    directional.position.set(0, -70, 100);
+    this.scene.add(ambient, directional);
+    this.scene.add(this.rootGroup);
+  }
+
+  setEnabled(enabled: boolean) {
+    this.enabled = enabled;
+    console.info(
+      `[trees-3d] layer ${enabled ? "enabled" : "disabled"} (minZoom=${TREES_MIN_ZOOM})`,
+    );
+  }
+
+  setDebugFixedTreeEnabled(enabled: boolean) {
+    this.debugFixedTreeEnabled = enabled;
+    console.info(`[trees-3d] debug fixed tree ${enabled ? "on" : "off"}`);
+  }
+
+  async onAdd(map: Map, gl: WebGLRenderingContext | WebGL2RenderingContext) {
+    this.map = map;
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: map.getCanvas(),
+      context: gl as WebGLRenderingContext,
+      antialias: true,
+    });
+    this.renderer.autoClear = false;
+    map.on("moveend", this.onMoveEnd);
+    map.on("zoomend", this.onZoomEnd);
+    await this.loadFeatures();
+    this.updateVisibleByViewport();
+    await this.rebuildScene();
+  }
+
+  onRemove() {
+    if (this.map) {
+      this.map.off("moveend", this.onMoveEnd);
+      this.map.off("zoomend", this.onZoomEnd);
+    }
+    this.rootGroup.clear();
+    this.renderer?.dispose();
+    this.map = null;
+    this.renderer = null;
+  }
+
+  render(
+    gl: WebGLRenderingContext | WebGL2RenderingContext,
+    matrix: number[],
+  ): void {
+    if (!this.renderer || !this.map || !this.enabled) return;
+    if (this.map.getZoom() < TREES_MIN_ZOOM) {
+      return;
+    }
+    this.camera.projectionMatrix = new THREE.Matrix4().fromArray(matrix);
+    this.renderer.resetState();
+    this.renderer.render(this.scene, this.camera);
+    (gl as any).reset?.();
+    this.map.triggerRepaint();
+  }
+
+  private async loadFeatures() {
+    const url = TREES_DATA_URL;
+    console.info(`[trees-3d] requesting GeoJSON URL: ${url}`);
+    const response = await fetch(url);
+    const contentType = response.headers.get("content-type") ?? "unknown";
+    console.info(
+      `[trees-3d] GeoJSON response status=${response.status}, content-type=${contentType}`,
+    );
+    if (!response.ok) {
+      throw new Error(
+        `[trees-3d] Error loading arbolado.geojson: ${response.status} (${url})`,
+      );
+    }
+    if (contentType.includes("text/html")) {
+      const htmlPreview = (await response.text())
+        .split(/\r?\n/)
+        .slice(0, 5)
+        .join("\n");
+      console.error(
+        `[trees-3d] ${url} está devolviendo HTML. Revisar ubicación del archivo en public/data.\n${htmlPreview}`,
+      );
+      throw new Error(
+        `${url} está devolviendo HTML. Revisar ubicación del archivo en public/data.`,
+      );
+    }
+    let fc: GeoJSON.FeatureCollection;
+    try {
+      fc = (await response.json()) as GeoJSON.FeatureCollection;
+    } catch (error) {
+      try {
+        const debugResponse = await fetch(url);
+        const rawText = await debugResponse.text();
+        const preview = rawText.split(/\r?\n/).slice(0, 5).join("\n");
+        console.error(
+          `[trees-3d] GeoJSON parse failed for ${url}. First lines:\n${preview}`,
+        );
+      } catch (previewError) {
+        console.error(
+          `[trees-3d] GeoJSON parse failed and preview could not be read for ${url}`,
+          previewError,
+        );
+      }
+      throw error;
+    }
+    if (fc.type !== "FeatureCollection" || !Array.isArray(fc.features)) {
+      throw new Error(
+        `[trees-3d] Invalid GeoJSON structure in ${url}: expected FeatureCollection with features[]`,
+      );
+    }
+    const parsed: TreeFeature[] = [];
+    fc.features.forEach((f, idx) => {
+      if (!f.geometry || f.geometry.type !== "Point") return;
+      const [lng, lat] = f.geometry.coordinates;
+      if (
+        !Array.isArray(f.geometry.coordinates) ||
+        typeof lng !== "number" ||
+        typeof lat !== "number"
+      ) {
+        return;
+      }
+      const props = (f.properties ?? {}) as { alt?: number; nam?: string };
+      const id = String(f.id ?? `${idx}`);
+      parsed.push({
+        id,
+        lng,
+        lat,
+        alt: Number(props.alt ?? 12),
+        modelIndex: this.selectModelIndex(id, props.nam, idx),
+      });
+    });
+    this.features = parsed;
+    console.info(`[trees-3d] features parsed: ${this.features.length}`);
+    if (this.features.length > 0) {
+      const first = this.features[0];
+      console.info(
+        `[trees-3d] first coordinate: lng=${first.lng}, lat=${first.lat}, alt=${first.alt}`,
+      );
+    }
+  }
+
+  private selectModelIndex(id: string, species?: string, idx = 0): number {
+    const key = `${id}-${species ?? ""}-${idx}`;
+    let hash = 0;
+    for (let i = 0; i < key.length; i++) {
+      hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+    }
+    return hash % TREE_MODELS.length;
+  }
+
+  private updateVisibleByViewport() {
+    if (!this.map || this.features.length === 0) return;
+    const bounds = this.map.getBounds();
+    const selected: TreeFeature[] = [];
+    for (const f of this.features) {
+      if (!bounds.contains([f.lng, f.lat])) continue;
+      selected.push(f);
+      if (selected.length >= TREES_MAX_VISIBLE) break;
+    }
+    this.visibleFeatures = selected;
+    void this.rebuildScene();
+  }
+
+  private async getBaseModel(modelIndex: number): Promise<THREE.Group> {
+    const cached = this.modelCache.get(modelIndex);
+    if (cached) return cached;
+    const pending = this.loader
+      .loadAsync(TREE_MODELS[modelIndex])
+      .then((gltf: { scene: THREE.Group }) => {
+        if (modelIndex === 0) console.info("Tree.glb loaded");
+        if (modelIndex === 1) console.info("Tree_2.glb loaded");
+        if (modelIndex === 2) console.info("Tree_3.glb loaded");
+        const base = gltf.scene;
+        base.updateMatrixWorld(true);
+        return base;
+      })
+      .catch((error: unknown) => {
+        console.error(
+          `[trees-3d] GLB load error: ${TREE_MODELS[modelIndex]}`,
+          error,
+        );
+        throw error;
+      });
+    this.modelCache.set(modelIndex, pending);
+    return pending;
+  }
+
+  private async rebuildScene() {
+    this.rootGroup.clear();
+    if (!this.map) return;
+    if (this.map.getZoom() < TREES_MIN_ZOOM) {
+      console.info(
+        `[trees-3d] skip rebuild: zoom ${this.map.getZoom().toFixed(2)} < ${TREES_MIN_ZOOM}`,
+      );
+      return;
+    }
+    if (this.visibleFeatures.length === 0 && !this.debugFixedTreeEnabled)
+      return;
+    const groups = await Promise.all(
+      this.visibleFeatures.map(async (feature) => {
+        const base = await this.getBaseModel(feature.modelIndex);
+        const tree = base.clone(true);
+        const merc = maplibregl.MercatorCoordinate.fromLngLat(
+          { lng: feature.lng, lat: feature.lat },
+          0,
+        );
+        const metersToWorld = merc.meterInMercatorCoordinateUnits();
+        const approxHeightMeters = Math.max(6, Math.min(40, feature.alt || 12));
+        const scale = Math.max(
+          metersToWorld * (approxHeightMeters / 6),
+          metersToWorld * 5,
+        );
+        tree.position.set(merc.x, merc.y, merc.z);
+        tree.scale.setScalar(scale);
+        tree.rotation.x = Math.PI / 2;
+        return tree;
+      }),
+    );
+    groups.forEach((treeGroup: THREE.Group) => this.rootGroup.add(treeGroup));
+    if (this.debugFixedTreeEnabled) {
+      const base = await this.getBaseModel(0);
+      const debugTree = base.clone(true);
+      const merc = maplibregl.MercatorCoordinate.fromLngLat(
+        { lng: TREES_DEBUG_COORD[0], lat: TREES_DEBUG_COORD[1] },
+        0,
+      );
+      const metersToWorld = merc.meterInMercatorCoordinateUnits();
+      const scale = Math.max(
+        metersToWorld * (TREES_DEBUG_ALT_METERS / 4),
+        metersToWorld * 8,
+      );
+      debugTree.position.set(merc.x, merc.y, merc.z);
+      debugTree.scale.setScalar(scale);
+      debugTree.rotation.x = Math.PI / 2;
+      this.rootGroup.add(debugTree);
+      console.info(
+        `[trees-3d] debug tree at Obelisco (${TREES_DEBUG_COORD[0]}, ${TREES_DEBUG_COORD[1]})`,
+      );
+    }
+    console.info(
+      `[trees-3d] rendered trees in scene: ${this.rootGroup.children.length}`,
+    );
+  }
+}
+
+function ensureTrees3DLayer(map: Map, treesLayer: Trees3DCustomLayer) {
+  if (!map.getLayer(TREES_3D_LAYER_ID)) {
+    console.info("adding 3d trees layer");
+    map.addLayer(treesLayer as any);
+    if (map.getLayer(TREES_3D_LAYER_ID)) {
+      console.info("3d trees layer added");
+    }
+    return;
+  }
+  console.info("3d trees layer already exists");
+}
+
 export function MapViewer(): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
   const { state } = ctx;
@@ -727,6 +1024,8 @@ export function MapViewer(): JSX.Element {
   const [tempFeature, setTempFeature] = useState<GeoJSON.Feature | null>(null);
   const [terrainOn, setTerrainOn] = useState(false);
   const [buildings3DEnabled, setBuildings3DEnabled] = useState(false);
+  const [trees3DEnabled, setTrees3DEnabled] = useState(true);
+  const treesLayerRef = useRef<Trees3DCustomLayer | null>(null);
   const syncOperationalLayersRef = useRef<(map: Map) => void>(() => {});
 
   // const [features, setFeatures] = useState({});
@@ -898,6 +1197,10 @@ export function MapViewer(): JSX.Element {
         } catch {}
       }
     }
+    const treesLayer = treesLayerRef.current;
+    if (treesLayer && trees3DEnabled) {
+      ensureTrees3DLayer(map, treesLayer);
+    }
   };
 
   useEffect(() => {
@@ -1015,6 +1318,14 @@ export function MapViewer(): JSX.Element {
       } catch {}
       // initial operational layers render
       runWhenStyleReady(map, () => syncOperationalLayersRef.current(map));
+      if (!treesLayerRef.current) {
+        treesLayerRef.current = new Trees3DCustomLayer();
+      }
+      treesLayerRef.current.setEnabled(trees3DEnabled);
+      treesLayerRef.current.setDebugFixedTreeEnabled(TREES_DEBUG_FIXED);
+      if (trees3DEnabled) {
+        ensureTrees3DLayer(map, treesLayerRef.current);
+      }
 
       // Terreno (MapTiler Terrain-RGB) + Hillshade + Cielo
       try {
@@ -1076,6 +1387,12 @@ export function MapViewer(): JSX.Element {
       // map.removeControl(draw);
       map.off("contextmenu", onContext);
       map.off("style.load", onMapStyleLoad);
+      const treesLayer = treesLayerRef.current;
+      if (treesLayer && map.getLayer(TREES_3D_LAYER_ID)) {
+        try {
+          map.removeLayer(TREES_3D_LAYER_ID);
+        } catch {}
+      }
       map.remove();
       try {
         ro.disconnect();
@@ -1086,6 +1403,7 @@ export function MapViewer(): JSX.Element {
       } catch {}
       mapRef.current = null;
       (window as any).maplibreglMap = null;
+      treesLayerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1167,6 +1485,21 @@ export function MapViewer(): JSX.Element {
       } catch {}
     });
   }, [buildings3DEnabled, runWhenStyleReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const treesLayer = treesLayerRef.current;
+    if (!map || !treesLayer) return;
+    treesLayer.setEnabled(trees3DEnabled);
+    runWhenStyleReady(map, () => {
+      if (trees3DEnabled) {
+        ensureTrees3DLayer(map, treesLayer);
+      } else if (map.getLayer(TREES_3D_LAYER_ID)) {
+        map.removeLayer(TREES_3D_LAYER_ID);
+        console.info("[trees-3d] layer removed by toggle");
+      }
+    });
+  }, [trees3DEnabled, runWhenStyleReady]);
 
   // update layers when state changes
   useEffect(() => {
@@ -1483,6 +1816,19 @@ export function MapViewer(): JSX.Element {
               alt="Edificios 3D"
               className="maplibregl-ctrl-icon"
             />
+          </button>
+        </div>
+        {/* Arboles 3D */}
+        <div className="maplibregl-ctrl maplibregl-ctrl-group">
+          <button
+            title={
+              trees3DEnabled ? "Desactivar arboles 3D" : "Activar arboles 3D"
+            }
+            onClick={() => setTrees3DEnabled((prev) => !prev)}
+          >
+            <span className="maplibregl-ctrl-icon" aria-hidden>
+              T
+            </span>
           </button>
         </div>
       </div>
