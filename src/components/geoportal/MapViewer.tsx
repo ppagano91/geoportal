@@ -107,7 +107,7 @@ const TREES_3D_LAYER_ID = "trees-3d-custom";
 const TREES_DATA_URL = "/data/arbolado.geojson";
 const TREE_MODELS = [
   "/data/glb/Tree.glb",
-  "/data/glb/Tree_4.glb",
+  "/data/glb/Tree_2.glb",
   "/data/glb/Tree.glb",
 ];
 const TREES_MAX_VISIBLE = 200;
@@ -115,6 +115,13 @@ const TREES_MIN_ZOOM = 16;
 const TREES_DEBUG_FIXED = true;
 const TREES_DEBUG_COORD: [number, number] = [-58.3816, -34.6037];
 const TREES_DEBUG_ALT_METERS = 18;
+const USE_TREE_HEIGHT_SCALE = false;
+const TREE_FIXED_SCALE = 8;
+const TREE_MIN_SCALE = 5;
+const TREE_MAX_SCALE = 12;
+const TREE_VERTICAL_OFFSET = 1.5;
+const TREES_DEBUG_SINGLE_ONLY = false;
+const TREES_DEBUG_HELPER_CUBE = true;
 
 type TreeFeature = {
   id: string;
@@ -752,13 +759,15 @@ class Trees3DCustomLayer {
   private loader = new GLTFLoader();
   private enabled = true;
   private debugFixedTreeEnabled = TREES_DEBUG_FIXED;
+  private singleTreeOnly = TREES_DEBUG_SINGLE_ONLY;
+  private showHelperCube = TREES_DEBUG_HELPER_CUBE;
   private onMoveEnd = () => this.updateVisibleByViewport();
   private onZoomEnd = () => this.updateVisibleByViewport();
 
   constructor() {
-    const ambient = new THREE.AmbientLight(0xffffff, 0.75);
-    const directional = new THREE.DirectionalLight(0xffffff, 0.85);
-    directional.position.set(0, -70, 100);
+    const ambient = new THREE.AmbientLight(0xffffff, 1.1);
+    const directional = new THREE.DirectionalLight(0xffffff, 1.0);
+    directional.position.set(40, -30, 120);
     this.scene.add(ambient, directional);
     this.scene.add(this.rootGroup);
   }
@@ -775,6 +784,11 @@ class Trees3DCustomLayer {
     console.info(`[trees-3d] debug fixed tree ${enabled ? "on" : "off"}`);
   }
 
+  setSingleTreeOnly(enabled: boolean) {
+    this.singleTreeOnly = enabled;
+    console.info(`[trees-3d] debug single tree mode ${enabled ? "on" : "off"}`);
+  }
+
   async onAdd(map: Map, gl: WebGLRenderingContext | WebGL2RenderingContext) {
     this.map = map;
     this.renderer = new THREE.WebGLRenderer({
@@ -783,6 +797,7 @@ class Trees3DCustomLayer {
       antialias: true,
     });
     this.renderer.autoClear = false;
+    this.renderer.sortObjects = true;
     map.on("moveend", this.onMoveEnd);
     map.on("zoomend", this.onZoomEnd);
     await this.loadFeatures();
@@ -928,6 +943,30 @@ class Trees3DCustomLayer {
         if (modelIndex === 1) console.info("Tree_2.glb loaded");
         if (modelIndex === 2) console.info("Tree_3.glb loaded");
         const base = gltf.scene;
+        base.traverse((obj) => {
+          const maybeMesh = obj as THREE.Mesh;
+          if (!maybeMesh.isMesh) return;
+          maybeMesh.frustumCulled = false;
+          const materials = Array.isArray(maybeMesh.material)
+            ? maybeMesh.material
+            : [maybeMesh.material];
+          for (const mat of materials) {
+            if (!mat) continue;
+            const material = mat as THREE.Material & {
+              side?: number;
+              transparent?: boolean;
+              depthTest?: boolean;
+              depthWrite?: boolean;
+              alphaTest?: number;
+            };
+            material.side = THREE.DoubleSide;
+            material.transparent = false;
+            material.depthTest = true;
+            material.depthWrite = true;
+            material.alphaTest = 0;
+            material.needsUpdate = true;
+          }
+        });
         base.updateMatrixWorld(true);
         return base;
       })
@@ -951,25 +990,67 @@ class Trees3DCustomLayer {
       );
       return;
     }
-    if (this.visibleFeatures.length === 0 && !this.debugFixedTreeEnabled)
+    if (
+      this.visibleFeatures.length === 0 &&
+      !this.debugFixedTreeEnabled &&
+      !this.singleTreeOnly
+    )
       return;
+    const sourceFeatures = this.singleTreeOnly
+      ? this.visibleFeatures.slice(0, 1)
+      : this.visibleFeatures;
     const groups = await Promise.all(
-      this.visibleFeatures.map(async (feature) => {
+      sourceFeatures.map(async (feature, idx) => {
         const base = await this.getBaseModel(feature.modelIndex);
         const tree = base.clone(true);
+        tree.traverse((obj) => {
+          const maybeMesh = obj as THREE.Mesh;
+          if (!maybeMesh.isMesh) return;
+          maybeMesh.frustumCulled = false;
+          maybeMesh.renderOrder = 10;
+        });
         const merc = maplibregl.MercatorCoordinate.fromLngLat(
           { lng: feature.lng, lat: feature.lat },
           0,
         );
         const metersToWorld = merc.meterInMercatorCoordinateUnits();
-        const approxHeightMeters = Math.max(6, Math.min(40, feature.alt || 12));
-        const scale = Math.max(
-          metersToWorld * (approxHeightMeters / 6),
-          metersToWorld * 5,
+        const clampedHeightScale = Math.max(
+          TREE_MIN_SCALE,
+          Math.min(TREE_MAX_SCALE, feature.alt || TREE_FIXED_SCALE),
         );
-        tree.position.set(merc.x, merc.y, merc.z);
-        tree.scale.setScalar(scale);
+        const scaleUnits = USE_TREE_HEIGHT_SCALE
+          ? clampedHeightScale
+          : TREE_FIXED_SCALE;
+        tree.position.set(
+          merc.x,
+          merc.y,
+          merc.z + TREE_VERTICAL_OFFSET * metersToWorld,
+        );
+        tree.scale.setScalar(metersToWorld * scaleUnits);
         tree.rotation.x = Math.PI / 2;
+        tree.rotation.z = 0;
+        if (idx < 3) {
+          console.info(
+            `[trees-3d] sample tree ${idx} pos=(${tree.position.x.toFixed(6)}, ${tree.position.y.toFixed(6)}, ${tree.position.z.toFixed(6)}) scale=${(metersToWorld * scaleUnits).toExponential(3)}`,
+          );
+        }
+        if (this.showHelperCube && idx === 0) {
+          const cube = new THREE.Mesh(
+            new THREE.BoxGeometry(
+              metersToWorld * 4,
+              metersToWorld * 4,
+              metersToWorld * 8,
+            ),
+            new THREE.MeshStandardMaterial({
+              color: 0xff00ff,
+              depthTest: true,
+              depthWrite: true,
+            }),
+          );
+          cube.position.set(0, 0, metersToWorld * 4);
+          cube.renderOrder = 11;
+          tree.add(cube);
+        }
         return tree;
       }),
     );
@@ -982,13 +1063,26 @@ class Trees3DCustomLayer {
         0,
       );
       const metersToWorld = merc.meterInMercatorCoordinateUnits();
-      const scale = Math.max(
-        metersToWorld * (TREES_DEBUG_ALT_METERS / 4),
-        metersToWorld * 8,
+      const debugScaleUnits = USE_TREE_HEIGHT_SCALE
+        ? Math.max(
+            TREE_MIN_SCALE,
+            Math.min(TREE_MAX_SCALE, TREES_DEBUG_ALT_METERS),
+          )
+        : TREE_FIXED_SCALE;
+      debugTree.position.set(
+        merc.x,
+        merc.y,
+        merc.z + TREE_VERTICAL_OFFSET * metersToWorld,
       );
-      debugTree.position.set(merc.x, merc.y, merc.z);
-      debugTree.scale.setScalar(scale);
+      debugTree.scale.setScalar(metersToWorld * debugScaleUnits);
       debugTree.rotation.x = Math.PI / 2;
+      debugTree.rotation.z = 0;
+      debugTree.traverse((obj) => {
+        const maybeMesh = obj as THREE.Mesh;
+        if (!maybeMesh.isMesh) return;
+        maybeMesh.frustumCulled = false;
+        maybeMesh.renderOrder = 10;
+      });
       this.rootGroup.add(debugTree);
       console.info(
         `[trees-3d] debug tree at Obelisco (${TREES_DEBUG_COORD[0]}, ${TREES_DEBUG_COORD[1]})`,
@@ -1001,9 +1095,21 @@ class Trees3DCustomLayer {
 }
 
 function ensureTrees3DLayer(map: Map, treesLayer: Trees3DCustomLayer) {
+  const styleLayers = (map.getStyle() as any)?.layers ?? [];
+  const firstSymbolId = styleLayers.find((l: any) => l.type === "symbol")?.id;
+  const buildingsIdx = styleLayers.findIndex(
+    (l: any) => l.id === BUILDINGS_3D_LAYER_ID,
+  );
+  const firstSymbolIdx = styleLayers.findIndex(
+    (l: any) => l.id === firstSymbolId,
+  );
+  const beforeId =
+    buildingsIdx >= 0 && firstSymbolIdx > buildingsIdx
+      ? firstSymbolId
+      : undefined;
   if (!map.getLayer(TREES_3D_LAYER_ID)) {
     console.info("adding 3d trees layer");
-    map.addLayer(treesLayer as any);
+    map.addLayer(treesLayer as any, beforeId);
     if (map.getLayer(TREES_3D_LAYER_ID)) {
       console.info("3d trees layer added");
     }
@@ -1323,6 +1429,7 @@ export function MapViewer(): JSX.Element {
       }
       treesLayerRef.current.setEnabled(trees3DEnabled);
       treesLayerRef.current.setDebugFixedTreeEnabled(TREES_DEBUG_FIXED);
+      treesLayerRef.current.setSingleTreeOnly(TREES_DEBUG_SINGLE_ONLY);
       if (trees3DEnabled) {
         ensureTrees3DLayer(map, treesLayerRef.current);
       }
