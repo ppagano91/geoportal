@@ -1,7 +1,7 @@
 import React, { useContext, useState } from "react";
 import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import { Button } from "../ui/Button";
-import { PencilRuler, Eraser, Save } from "lucide-react";
+import { PencilRuler, Eraser, Save, Trash2 } from "lucide-react";
 import pointIcon from "../../assets/images/point.svg";
 import lineIcon from "../../assets/images/line.svg";
 import polygonIcon from "../../assets/images/polygon.svg";
@@ -10,7 +10,7 @@ import circleIcon from "../../assets/images/circle.svg";
 
 export function MapControls(): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
-  const { state, dispatch } = ctx;
+  const { state, dispatch, drawEngineRef } = ctx;
   const [openDraw, setOpenDraw] = useState(false);
 
   function DrawModeIcon({
@@ -138,10 +138,15 @@ export function MapControls(): JSX.Element {
                 <DrawModeIcon src={circleIcon} alt="Círculo" />
               </Button>
               <Button
-                title="Salir de modo dibujo"
-                variant="secondary"
+                title="Seleccionar / editar"
+                variant={state.drawMode === "select" ? "default" : "secondary"}
                 size="sm"
-                onClick={() => dispatch({ type: "setDrawMode", mode: "none" })}
+                onClick={() =>
+                  dispatch({
+                    type: "setDrawMode",
+                    mode: state.drawMode === "select" ? "none" : "select",
+                  })
+                }
               >
                 <PencilRuler className="h-4 w-4" />
               </Button>
@@ -150,7 +155,18 @@ export function MapControls(): JSX.Element {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => dispatch({ type: "clearDrawings" })}
+                title="Eliminar geometría seleccionada"
+                onClick={() => drawEngineRef.current?.deleteSelected()}
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  drawEngineRef.current?.clear();
+                  dispatch({ type: "clearDrawings" });
+                }}
               >
                 <Eraser className="h-4 w-4 mr-1" /> Limpiar
               </Button>
@@ -163,7 +179,8 @@ export function MapControls(): JSX.Element {
             </div>
             <div className="text-[11px] text-muted-foreground mt-1">
               Punto: clic. Línea/Polígono: clics y doble clic para terminar.
-              Rectángulo/Círculo: arrastrar.
+              Rectángulo/Círculo: arrastrar. Seleccionar: clic en geometría.
+              Supr elimina la selección.
             </div>
           </>
         )}

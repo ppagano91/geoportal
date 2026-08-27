@@ -168,6 +168,11 @@ button.maplibregl-ctrl-custom-buildings-off {
   margin-top: 8.5rem;
 }
 
+/* El toolbar de Terra Draw se oculta: usamos Herramientas de Dibujo existentes */
+.maplibregl-ctrl-top-left {
+  display: none !important;
+}
+
 /* ===== Mapbox Draw FIX para MapLibre ===== */
 
 .mapboxgl-ctrl-group,

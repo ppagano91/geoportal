@@ -1,4 +1,4 @@
-import React, {
+﻿import React, {
   useContext,
   useEffect,
   useMemo,
@@ -6,11 +6,11 @@ import React, {
   useState,
   useCallback,
 } from "react";
-import maplibregl, { Map, MapMouseEvent } from "maplibre-gl";
+import maplibregl, { Map, MapMouseEvent, StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { RotateCcw, LocateFixed } from "lucide-react";
-import { cn } from "../../utils/cn";
-import { GeoPortalContext } from "../../shell/GeoPortalApp";
+import { MaplibreTerradrawControl } from "@watergis/maplibre-gl-terradraw";
+import "@watergis/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css";
+import { GeoPortalContext, type DrawEngine } from "../../shell/GeoPortalApp";
 import { BaseMapControl } from "./BaseMapControl";
 import { FeaturePopup } from "./FeaturePopup";
 import type { Layer } from "../../types/geoportal";
@@ -19,6 +19,13 @@ import { MapControls } from "./MapControls";
 import { env } from "../../config/env";
 import buildingsIcon from "../../assets/images/buildings.svg";
 import reliefIcon from "../../assets/images/relief.svg";
+import {
+  logDrawLayerIds,
+  mergeTerraDrawStyle,
+  moveTerraDrawLayersToTop,
+  snapshotToFeatureCollection,
+  toTerraDrawMode,
+} from "./terraDraw";
 
 // import MapboxDraw from "@mapbox/mapbox-gl-draw";
 
@@ -717,17 +724,20 @@ function removeWms(map: Map, layerId: string) {
 
 export function MapViewer(): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
-  const { state } = ctx;
+  const { state, dispatch, drawEngineRef } = ctx;
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
+  const drawControlRef = useRef<MaplibreTerradrawControl | null>(null);
+  const skipInitialSetStyleRef = useRef(true);
+  const drawModeRef = useRef(state.drawMode);
   const [popup, setPopup] = useState<{
     coord: [number, number];
     feature: any;
   } | null>(null);
-  const [tempFeature, setTempFeature] = useState<GeoJSON.Feature | null>(null);
   const [terrainOn, setTerrainOn] = useState(false);
   const [buildings3DEnabled, setBuildings3DEnabled] = useState(false);
   const syncOperationalLayersRef = useRef<(map: Map) => void>(() => {});
+  drawModeRef.current = state.drawMode;
 
   // const [features, setFeatures] = useState({});
 
@@ -757,96 +767,16 @@ export function MapViewer(): JSX.Element {
   }, [state.baseMap]);
 
   const runWhenStyleReady = useCallback((map: Map, cb: () => void) => {
-    if (map.isStyleLoaded()) {
+    const style = map.getStyle();
+    if (style?.layers) {
       cb();
       return;
     }
-    const onIdle = () => {
-      map.off("idle", onIdle);
-      cb();
-    };
-    map.on("idle", onIdle);
+    map.once("style.load", cb);
   }, []);
 
   // Keep map visual state aligned with sidebar state, especially after setStyle().
   syncOperationalLayersRef.current = (map: Map) => {
-    // drawings sources
-    if (!map.getSource("drawings-src")) {
-      map.addSource("drawings-src", {
-        type: "geojson",
-        data: state.drawings,
-      } as any);
-    } else {
-      (map.getSource("drawings-src") as any).setData(state.drawings);
-    }
-    if (!map.getLayer("drawings-point")) {
-      map.addLayer({
-        id: "drawings-point",
-        type: "circle",
-        source: "drawings-src",
-        filter: ["==", ["geometry-type"], "Point"],
-        paint: {
-          "circle-radius": 5,
-          "circle-color": "#0ea5e9",
-          "circle-stroke-color": "#0b87bf",
-          "circle-stroke-width": 1,
-        },
-      });
-    }
-    if (!map.getLayer("drawings-line")) {
-      map.addLayer({
-        id: "drawings-line",
-        type: "line",
-        source: "drawings-src",
-        filter: ["==", ["geometry-type"], "LineString"],
-        paint: { "line-color": "#0ea5e9", "line-width": 2 },
-      });
-    }
-    if (!map.getLayer("drawings-poly")) {
-      map.addLayer({
-        id: "drawings-poly",
-        type: "fill",
-        source: "drawings-src",
-        filter: ["==", ["geometry-type"], "Polygon"],
-        paint: { "fill-color": "#0ea5e9", "fill-opacity": 0.2 },
-      });
-    }
-    // temp source
-    if (!map.getSource("draw-temp-src")) {
-      map.addSource("draw-temp-src", {
-        type: "geojson",
-        data: tempFeature
-          ? { type: "FeatureCollection", features: [tempFeature] }
-          : { type: "FeatureCollection", features: [] },
-      } as any);
-    } else {
-      const data = tempFeature
-        ? { type: "FeatureCollection", features: [tempFeature] }
-        : { type: "FeatureCollection", features: [] };
-      (map.getSource("draw-temp-src") as any).setData(data as any);
-    }
-    if (!map.getLayer("draw-temp-line")) {
-      map.addLayer({
-        id: "draw-temp-line",
-        type: "line",
-        source: "draw-temp-src",
-        filter: ["==", ["geometry-type"], "LineString"],
-        paint: {
-          "line-color": "#22d3ee",
-          "line-dasharray": [2, 2],
-          "line-width": 2,
-        },
-      });
-    }
-    if (!map.getLayer("draw-temp-poly")) {
-      map.addLayer({
-        id: "draw-temp-poly",
-        type: "fill",
-        source: "draw-temp-src",
-        filter: ["==", ["geometry-type"], "Polygon"],
-        paint: { "fill-color": "#22d3ee", "fill-opacity": 0.15 },
-      });
-    }
     // remove missing
     const existingIds = new Set(state.layers.map((l) => l.id));
     // remove geojson
@@ -898,6 +828,7 @@ export function MapViewer(): JSX.Element {
         } catch {}
       }
     }
+    moveTerraDrawLayersToTop(map);
   };
 
   useEffect(() => {
@@ -939,7 +870,103 @@ export function MapViewer(): JSX.Element {
       "bottom-left",
     );
 
-    // map.addControl(draw, "top-left");
+    const drawControl = new MaplibreTerradrawControl({
+      modes: [
+        "render",
+        "point",
+        "linestring",
+        "polygon",
+        "rectangle",
+        "circle",
+        "select",
+      ],
+      open: false,
+      showDeleteConfirmation: false,
+    });
+    map.addControl(drawControl, "top-left");
+    drawControlRef.current = drawControl;
+    console.log("[draw] control initialized");
+
+    const applyDrawMode = () => {
+      const instance = drawControl.getTerraDrawInstance();
+      if (!instance?.enabled) return;
+      const nextMode = toTerraDrawMode(drawModeRef.current);
+      if (instance.getMode() !== nextMode) {
+        instance.setMode(nextMode);
+        console.log("[draw] mode changed:", nextMode);
+      }
+    };
+
+    const syncDrawingsFromStore = (logCount = false) => {
+      const instance = drawControl.getTerraDrawInstance();
+      if (!instance) return;
+      const snapshot = instance.getSnapshot();
+      const drawings = snapshotToFeatureCollection(snapshot);
+      if (logCount) {
+        console.log("[draw] feature count:", drawings.features.length);
+      }
+      dispatch({ type: "replaceDrawings", drawings });
+    };
+
+    const drawEngine: DrawEngine = {
+      setMode: (mode) => {
+        const instance = drawControl.getTerraDrawInstance();
+        if (!instance?.enabled) return;
+        const nextMode = toTerraDrawMode(mode);
+        instance.setMode(nextMode);
+        console.log("[draw] mode changed:", nextMode);
+      },
+      clear: () => {
+        const instance = drawControl.getTerraDrawInstance();
+        if (!instance?.enabled) return;
+        instance.clear();
+        syncDrawingsFromStore(true);
+        applyDrawMode();
+      },
+      deleteSelected: () => {
+        const instance = drawControl.getTerraDrawInstance();
+        if (!instance?.enabled) return;
+        const selected = drawControl.getFeatures(true);
+        let ids = (selected?.features ?? [])
+          .map((feature) => feature.id)
+          .filter((id): id is string | number => id !== undefined);
+        if (ids.length === 0) {
+          ids = instance
+            .getSnapshot()
+            .filter((feature) => feature.properties?.selected)
+            .map((feature) => feature.id)
+            .filter((id): id is string | number => id !== undefined);
+        }
+        if (ids.length === 0) return;
+        instance.removeFeatures(ids);
+        syncDrawingsFromStore(true);
+      },
+    };
+    drawEngineRef.current = drawEngine;
+
+    const onDrawChange = () => {
+      syncDrawingsFromStore();
+    };
+    const onDrawFinish = () => {
+      console.log("[draw] feature created");
+      syncDrawingsFromStore(true);
+    };
+
+    const onTerraDrawReady = () => {
+      const instance = drawControl.getTerraDrawInstance();
+      if (!instance) return;
+      if (!instance.enabled) instance.start();
+      console.log("[draw] TerraDraw started");
+      instance.on("change", onDrawChange);
+      instance.on("finish", onDrawFinish);
+      applyDrawMode();
+      runWhenStyleReady(map, () => {
+        moveTerraDrawLayersToTop(map);
+        logDrawLayerIds(map, "layers after start");
+      });
+    };
+    if (map.loaded()) onTerraDrawReady();
+    else map.once("load", onTerraDrawReady);
 
     // const syncDrawings = () => {
     //   const data = draw.getAll();
@@ -1005,7 +1032,12 @@ export function MapViewer(): JSX.Element {
     map.getCanvas().addEventListener("contextmenu", preventCtx);
 
     const onMapStyleLoad = () => {
-      runWhenStyleReady(map, () => syncOperationalLayersRef.current(map));
+      console.log("[draw] style reloaded");
+      runWhenStyleReady(map, () => {
+        console.log("[draw] restoring draw layers");
+        syncOperationalLayersRef.current(map);
+        logDrawLayerIds(map, "layers after style.load");
+      });
     };
     map.on("style.load", onMapStyleLoad);
 
@@ -1069,11 +1101,16 @@ export function MapViewer(): JSX.Element {
     });
 
     return () => {
-      // map.off("draw.create", syncDrawings);
-      // map.off("draw.update", syncDrawings);
-      // map.off("draw.delete", syncDrawings);
-
-      // map.removeControl(draw);
+      const instance = drawControl.getTerraDrawInstance();
+      try {
+        instance?.off("change", onDrawChange);
+        instance?.off("finish", onDrawFinish);
+      } catch {}
+      try {
+        map.removeControl(drawControl);
+      } catch {}
+      drawControlRef.current = null;
+      drawEngineRef.current = null;
       map.off("contextmenu", onContext);
       map.off("style.load", onMapStyleLoad);
       map.remove();
@@ -1090,26 +1127,23 @@ export function MapViewer(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Cambiar estilo preservando vista (sin mover mapa)
+  // Cambiar estilo preservando vista y layers de Terra Draw
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    if (skipInitialSetStyleRef.current) {
+      skipInitialSetStyleRef.current = false;
+      return;
+    }
     const center = map.getCenter();
     const zoom = map.getZoom();
     const pitch = map.getPitch();
     const bearing = map.getBearing();
-    let synced = false;
     const applyAfterStyleReady = () => {
-      if (synced || !map.isStyleLoaded()) return;
-      synced = true;
-      map.off("styledata", applyAfterStyleReady);
-      map.off("idle", applyAfterStyleReady);
       try {
         map.jumpTo({ center, zoom, pitch, bearing });
       } catch {}
-      // Reinject overlay sources/layers removed by setStyle().
       syncOperationalLayersRef.current(map);
-      // Reaplicar terreno/hillshade si 3D activo
       try {
         if (!map.getSource("terrain-rgb")) {
           map.addSource("terrain-rgb", {
@@ -1147,14 +1181,24 @@ export function MapViewer(): JSX.Element {
         }
         applyBuildings3DState(map, buildings3DEnabled);
       } catch {}
+      moveTerraDrawLayersToTop(map);
+      logDrawLayerIds(map, "layers after basemap change");
     };
-    map.on("styledata", applyAfterStyleReady);
-    map.on("idle", applyAfterStyleReady);
-    map.setStyle(styleUrl as any);
+    map.once("style.load", applyAfterStyleReady);
+    const drawControl = drawControlRef.current;
+    map.setStyle(styleUrl as any, {
+      transformStyle: (previous, next) =>
+        drawControl
+          ? mergeTerraDrawStyle(
+              drawControl,
+              previous as StyleSpecification | undefined,
+              next as StyleSpecification,
+            )
+          : next,
+    });
 
     return () => {
-      map.off("styledata", applyAfterStyleReady);
-      map.off("idle", applyAfterStyleReady);
+      map.off("style.load", applyAfterStyleReady);
     };
   }, [styleUrl, runWhenStyleReady]);
 
@@ -1173,172 +1217,22 @@ export function MapViewer(): JSX.Element {
     const map = mapRef.current;
     if (!map) return;
     runWhenStyleReady(map, () => syncOperationalLayersRef.current(map));
-  }, [state.layers, state.drawings, tempFeature, runWhenStyleReady]);
+  }, [state.layers, runWhenStyleReady]);
 
-  // drawing interactions
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    // disable double click zoom while drawing line/polygon
-    const shouldDisableDbl =
-      state.drawMode === "line" || state.drawMode === "polygon";
-    try {
-      if (shouldDisableDbl) map.doubleClickZoom.disable();
-      else map.doubleClickZoom.enable();
-    } catch {}
-    let drawing: {
-      type: "line" | "polygon" | "rectangle" | "circle";
-      coords: [number, number][];
-      start?: [number, number];
-    } | null = null;
-    function toFeatureLine(coords: [number, number][]): GeoJSON.Feature {
-      return {
-        type: "Feature",
-        geometry: { type: "LineString", coordinates: coords },
-        properties: {},
-      };
-    }
-    function toFeaturePolygon(coords: [number, number][]): GeoJSON.Feature {
-      const closed =
-        coords.length > 0 &&
-        (coords[0][0] !== coords[coords.length - 1][0] ||
-          coords[0][1] !== coords[coords.length - 1][1])
-          ? [...coords, coords[0]]
-          : coords;
-      return {
-        type: "Feature",
-        geometry: { type: "Polygon", coordinates: [closed] },
-        properties: {},
-      };
-    }
-    function rectFrom(
-      a: [number, number],
-      b: [number, number],
-    ): GeoJSON.Feature {
-      const minX = Math.min(a[0], b[0]),
-        maxX = Math.max(a[0], b[0]);
-      const minY = Math.min(a[1], b[1]),
-        maxY = Math.max(a[1], b[1]);
-      const ring: [number, number][] = [
-        [minX, minY],
-        [maxX, minY],
-        [maxX, maxY],
-        [minX, maxY],
-        [minX, minY],
-      ];
-      return toFeaturePolygon(ring);
-    }
-    function circleFrom(
-      center: [number, number],
-      edge: [number, number],
-      steps = 64,
-    ): GeoJSON.Feature {
-      // approximate circle using lng/lat degrees naive (ok for small radius)
-      const dx = edge[0] - center[0];
-      const dy = edge[1] - center[1];
-      const r = Math.sqrt(dx * dx + dy * dy);
-      const ring: [number, number][] = [];
-      for (let i = 0; i <= steps; i++) {
-        const a = (i / steps) * Math.PI * 2;
-        ring.push([center[0] + r * Math.cos(a), center[1] + r * Math.sin(a)]);
-      }
-      return toFeaturePolygon(ring);
-    }
-    function onClick(e: MapMouseEvent) {
-      const { lng, lat } = e.lngLat;
-      if (
-        state.drawMode === "none" ||
-        state.drawMode === "rectangle" ||
-        state.drawMode === "circle"
-      )
-        return;
-      if (state.drawMode === "point") {
-        ctx.dispatch({
-          type: "addDrawing",
-          feature: {
-            type: "Feature",
-            geometry: { type: "Point", coordinates: [lng, lat] },
-            properties: {},
-          },
-        });
-      } else if (state.drawMode === "line") {
-        if (!drawing) drawing = { type: "line", coords: [] };
-        drawing.coords.push([lng, lat]);
-        setTempFeature(toFeatureLine(drawing.coords));
-      } else if (state.drawMode === "polygon") {
-        if (!drawing) drawing = { type: "polygon", coords: [] };
-        drawing.coords.push([lng, lat]);
-        setTempFeature(toFeaturePolygon(drawing.coords));
-      }
-    }
-    function onDblClick() {
-      if (!drawing) return;
-      if (drawing.type === "line") {
-        ctx.dispatch({
-          type: "addDrawing",
-          feature: toFeatureLine(drawing.coords),
-        });
-      } else if (drawing.type === "polygon") {
-        ctx.dispatch({
-          type: "addDrawing",
-          feature: toFeaturePolygon(drawing.coords),
-        });
-      }
-      drawing = null;
-      setTempFeature(null);
-    }
-    function onMouseDown(e: MapMouseEvent) {
-      if (state.drawMode !== "rectangle" && state.drawMode !== "circle") return;
-      const oe = e.originalEvent as MouseEvent;
-      if (oe && oe.button !== 0) return; // solo botón primario
-      const { lng, lat } = e.lngLat;
-      drawing = { type: state.drawMode, coords: [], start: [lng, lat] };
-      try {
-        map?.dragPan.disable();
-      } catch {}
-    }
-    function onMouseMove(e: MapMouseEvent) {
-      if (!drawing || !drawing.start) return;
-      const { lng, lat } = e.lngLat;
-      if (drawing.type === "rectangle") {
-        setTempFeature(rectFrom(drawing.start, [lng, lat]));
-      } else if (drawing.type === "circle") {
-        setTempFeature(circleFrom(drawing.start, [lng, lat]));
-      }
-    }
-    function onMouseUp(e: MapMouseEvent) {
-      if (!drawing || !drawing.start) return;
-      const { lng, lat } = e.lngLat;
-      if (drawing.type === "rectangle") {
-        const f = rectFrom(drawing.start, [lng, lat]);
-        ctx.dispatch({ type: "addDrawing", feature: f });
-      } else if (drawing.type === "circle") {
-        const f = circleFrom(drawing.start, [lng, lat]);
-        ctx.dispatch({ type: "addDrawing", feature: f });
-      }
-      drawing = null;
-      setTempFeature(null);
-      try {
-        map?.dragPan.enable();
-      } catch {}
-    }
-    map.on("click", onClick);
-    map.on("dblclick", onDblClick);
-    map.on("mousedown", onMouseDown);
-    map.on("mousemove", onMouseMove);
-    map.on("mouseup", onMouseUp);
-    return () => {
-      map.off("click", onClick);
-      map.off("dblclick", onDblClick);
-      map.off("mousedown", onMouseDown);
-      map.off("mousemove", onMouseMove);
-      map.off("mouseup", onMouseUp);
-      setTempFeature(null);
-      try {
-        map.dragPan.enable();
-      } catch {}
-    };
-  }, [state.drawMode, ctx]);
+    drawEngineRef.current?.setMode(state.drawMode);
+  }, [drawEngineRef, state.drawMode]);
+
+  useEffect(() => {
+    const instance = drawControlRef.current?.getTerraDrawInstance();
+    if (!instance?.enabled) return;
+    if (state.drawings.features.length > 0) return;
+    const remaining = snapshotToFeatureCollection(instance.getSnapshot());
+    if (remaining.features.length === 0) return;
+    instance.clear();
+    console.log("[draw] feature count:", 0);
+  }, [state.drawings]);
+
 
   return (
     <div className="absolute inset-0 overflow-hidden">

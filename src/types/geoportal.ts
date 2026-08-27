@@ -68,7 +68,7 @@ export interface GeoPortalState {
 	sidebarOpen: boolean
 	theme: 'light' | 'dark'
 	baseMap: BaseMapStyle
-	drawMode: 'none' | 'point' | 'line' | 'polygon' | 'rectangle' | 'circle'
+	drawMode: 'none' | 'point' | 'line' | 'polygon' | 'rectangle' | 'circle' | 'select'
 	drawings: GeoJSON.FeatureCollection
 	wmsDialogOpen: boolean
 	compareEnabled?: boolean

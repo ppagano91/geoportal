@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useReducer } from "react";
+import React, { useEffect, useMemo, useReducer, useRef } from "react";
 import { GeoPortalState, Layer } from "../types/geoportal";
 import { Header } from "../components/geoportal/Header";
 import { Sidebar } from "../components/geoportal/Sidebar";
@@ -18,6 +18,7 @@ type Action =
   | { type: "setActiveLayer"; id?: string }
   | { type: "setDrawMode"; mode: GeoPortalState["drawMode"] }
   | { type: "addDrawing"; feature: GeoJSON.Feature }
+  | { type: "replaceDrawings"; drawings: GeoJSON.FeatureCollection }
   | { type: "replaceTempDrawing"; feature: GeoJSON.Feature | null }
   | { type: "clearDrawings" }
   | { type: "saveDrawingsAsLayer" }
@@ -119,6 +120,8 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
       };
       return { ...state, drawings };
     }
+    case "replaceDrawings":
+      return { ...state, drawings: action.drawings };
     case "replaceTempDrawing":
       // handled inside MapViewer; state storage optional; skip for now
       return state;
@@ -184,9 +187,16 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
   }
 }
 
+export type DrawEngine = {
+  setMode: (mode: GeoPortalState["drawMode"]) => void;
+  clear: () => void;
+  deleteSelected: () => void;
+};
+
 export const GeoPortalContext = React.createContext<{
   state: GeoPortalState;
   dispatch: React.Dispatch<Action>;
+  drawEngineRef: React.MutableRefObject<DrawEngine | null>;
 } | null>(null);
 
 export function GeoPortalApp(): JSX.Element {
@@ -204,7 +214,11 @@ export function GeoPortalApp(): JSX.Element {
     localStorage.setItem("geoportal:theme", state.theme);
   }, [state.theme]);
 
-  const ctx = useMemo(() => ({ state, dispatch }), [state]);
+  const drawEngineRef = useRef<DrawEngine | null>(null);
+  const ctx = useMemo(
+    () => ({ state, dispatch, drawEngineRef }),
+    [state],
+  );
 
   return (
     <GeoPortalContext.Provider value={ctx}>
