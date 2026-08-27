@@ -168,9 +168,28 @@ button.maplibregl-ctrl-custom-buildings-off {
   margin-top: 8.5rem;
 }
 
-/* El toolbar de Terra Draw se oculta: usamos Herramientas de Dibujo existentes */
-.maplibregl-ctrl-top-left {
-  display: none !important;
+/* Plugin Terra Draw: columna compacta, sin afectar controles derechos */
+.maplibregl-ctrl-top-left .maplibregl-ctrl-group:has([class*="maplibregl-terradraw-"]) {
+  width: 2.25rem;
+  min-width: 2.25rem;
+  max-width: 2.25rem;
+}
+.maplibregl-ctrl-top-left button[class*="maplibregl-terradraw-"] {
+  width: 2.25rem;
+  min-width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  margin: 0;
+  background-size: 1.15rem 1.15rem;
+}
+.maplibregl-ctrl-top-left button.maplibregl-terradraw-add-control,
+.maplibregl-ctrl-top-left button.maplibregl-terradraw-render-button {
+  display: block;
+}
+
+/* El toolbar nativo queda oculto: el visor usa Herramientas de Dibujo */
+.maplibregl-ctrl-top-left .maplibregl-ctrl-group:has(.maplibregl-terradraw-render-button) {
+  display: none;
 }
 
 /* ===== Mapbox Draw FIX para MapLibre ===== */

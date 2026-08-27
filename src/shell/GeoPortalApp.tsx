@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useReducer, useRef } from "react";
-import { GeoPortalState, Layer } from "../types/geoportal";
+import type { GeoPortalState, Layer } from "../types/geoportal";
 import { Header } from "../components/geoportal/Header";
 import { Sidebar } from "../components/geoportal/Sidebar";
 import { MapViewer } from "../components/geoportal/MapViewer";

@@ -88,3 +88,62 @@ export function logDrawLayerIds(map: Map, reason: string) {
     .filter((id) => id.startsWith("td-"));
   console.log(`[draw] ${reason}`, ids);
 }
+
+/** Style JSON listo para addSource/addLayer. No espera tiles del basemap. */
+export function whenStyleJsonReady(map: Map, cb: () => void) {
+  const style = (map as any).style;
+  if (style?._loaded) {
+    cb();
+    return;
+  }
+  map.once("style.load", cb);
+}
+
+export function startTerraDraw(control: MaplibreTerradrawControl) {
+  try {
+    control.activate();
+  } catch {
+    /* already active */
+  }
+  const instance = control.getTerraDrawInstance();
+  if (instance && !instance.enabled) {
+    try {
+      instance.start();
+    } catch {
+      /* already started */
+    }
+  }
+  return instance;
+}
+
+export function restartTerraDrawIfLayersMissing(
+  map: Map,
+  control: MaplibreTerradrawControl,
+) {
+  const instance = control.getTerraDrawInstance();
+  if (!instance) return;
+  if (map.getSource("td-point")) {
+    moveTerraDrawLayersToTop(map);
+    return;
+  }
+  console.log("[draw] restoring draw layers");
+  const snapshot = instance.enabled ? instance.getSnapshot() : [];
+  try {
+    if (instance.enabled) instance.stop();
+  } catch {
+    /* layers already gone with the style */
+  }
+  try {
+    instance.start();
+  } catch (err) {
+    console.warn("[draw] restart failed", err);
+  }
+  if (snapshot.length > 0) {
+    try {
+      instance.addFeatures(snapshot);
+    } catch (err) {
+      console.warn("[draw] failed to restore features", err);
+    }
+  }
+  moveTerraDrawLayersToTop(map);
+}

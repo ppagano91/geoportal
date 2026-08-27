@@ -23,8 +23,11 @@ import {
   logDrawLayerIds,
   mergeTerraDrawStyle,
   moveTerraDrawLayersToTop,
+  restartTerraDrawIfLayersMissing,
   snapshotToFeatureCollection,
+  startTerraDraw,
   toTerraDrawMode,
+  whenStyleJsonReady,
 } from "./terraDraw";
 
 // import MapboxDraw from "@mapbox/mapbox-gl-draw";
@@ -767,12 +770,7 @@ export function MapViewer(): JSX.Element {
   }, [state.baseMap]);
 
   const runWhenStyleReady = useCallback((map: Map, cb: () => void) => {
-    const style = map.getStyle();
-    if (style?.layers) {
-      cb();
-      return;
-    }
-    map.once("style.load", cb);
+    whenStyleJsonReady(map, cb);
   }, []);
 
   // Keep map visual state aligned with sidebar state, especially after setStyle().
@@ -861,15 +859,6 @@ export function MapViewer(): JSX.Element {
     (window as any).maplibreglMap = map;
     mapRef.current = map;
 
-    map.addControl(
-      new maplibregl.NavigationControl({ visualizePitch: true }),
-      "top-right",
-    );
-    map.addControl(
-      new maplibregl.ScaleControl({ unit: "metric" }),
-      "bottom-left",
-    );
-
     const drawControl = new MaplibreTerradrawControl({
       modes: [
         "render",
@@ -883,9 +872,6 @@ export function MapViewer(): JSX.Element {
       open: false,
       showDeleteConfirmation: false,
     });
-    map.addControl(drawControl, "top-left");
-    drawControlRef.current = drawControl;
-    console.log("[draw] control initialized");
 
     const applyDrawMode = () => {
       const instance = drawControl.getTerraDrawInstance();
@@ -942,7 +928,6 @@ export function MapViewer(): JSX.Element {
         syncDrawingsFromStore(true);
       },
     };
-    drawEngineRef.current = drawEngine;
 
     const onDrawChange = () => {
       syncDrawingsFromStore();
@@ -952,21 +937,34 @@ export function MapViewer(): JSX.Element {
       syncDrawingsFromStore(true);
     };
 
-    const onTerraDrawReady = () => {
-      const instance = drawControl.getTerraDrawInstance();
-      if (!instance) return;
-      if (!instance.enabled) instance.start();
+    let drawAttached = false;
+    const attachDrawControl = () => {
+      if (drawAttached) return;
+      drawAttached = true;
+      map.addControl(drawControl, "top-left");
+      drawControlRef.current = drawControl;
+      drawEngineRef.current = drawEngine;
+      console.log("[draw] control initialized");
+      const instance = startTerraDraw(drawControl);
+      if (instance) {
+        instance.on("change", onDrawChange);
+        instance.on("finish", onDrawFinish);
+      }
       console.log("[draw] TerraDraw started");
-      instance.on("change", onDrawChange);
-      instance.on("finish", onDrawFinish);
       applyDrawMode();
-      runWhenStyleReady(map, () => {
-        moveTerraDrawLayersToTop(map);
-        logDrawLayerIds(map, "layers after start");
-      });
+      restartTerraDrawIfLayersMissing(map, drawControl);
+      logDrawLayerIds(map, "layers after start");
     };
-    if (map.loaded()) onTerraDrawReady();
-    else map.once("load", onTerraDrawReady);
+    whenStyleJsonReady(map, attachDrawControl);
+
+    map.addControl(
+      new maplibregl.NavigationControl({ visualizePitch: true }),
+      "top-right",
+    );
+    map.addControl(
+      new maplibregl.ScaleControl({ unit: "metric" }),
+      "bottom-left",
+    );
 
     // const syncDrawings = () => {
     //   const data = draw.getAll();
@@ -1033,7 +1031,12 @@ export function MapViewer(): JSX.Element {
 
     const onMapStyleLoad = () => {
       console.log("[draw] style reloaded");
-      runWhenStyleReady(map, () => {
+      whenStyleJsonReady(map, () => {
+        if (drawAttached) {
+          restartTerraDrawIfLayersMissing(map, drawControl);
+        } else {
+          attachDrawControl();
+        }
         console.log("[draw] restoring draw layers");
         syncOperationalLayersRef.current(map);
         logDrawLayerIds(map, "layers after style.load");
@@ -1106,9 +1109,11 @@ export function MapViewer(): JSX.Element {
         instance?.off("change", onDrawChange);
         instance?.off("finish", onDrawFinish);
       } catch {}
-      try {
-        map.removeControl(drawControl);
-      } catch {}
+      if (drawAttached) {
+        try {
+          map.removeControl(drawControl);
+        } catch {}
+      }
       drawControlRef.current = null;
       drawEngineRef.current = null;
       map.off("contextmenu", onContext);
