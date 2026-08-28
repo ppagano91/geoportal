@@ -13,6 +13,7 @@ import { Label } from "../ui/Label";
 import { Slider } from "../ui/Slider";
 import { Select } from "../ui/Select";
 import { Button } from "../ui/Button";
+import { ScrollArea } from "../ui/ScrollArea";
 
 function toHex(s: string): string {
   return /^#/.test(s) ? s : `#${s}`;
@@ -37,51 +38,60 @@ export function LayerSettingsDialog(): JSX.Element | null {
   const isPolygon =
     layer.geometryType === "Polygon" || layer.geometryType === "MultiPolygon";
 
+  const close = () => dispatch({ type: "setActiveLayer", id: undefined });
+
   return (
     <Dialog
       open={open}
-      onOpenChange={(o) =>
-        !o && dispatch({ type: "setActiveLayer", id: undefined })
-      }
+      onOpenChange={(o) => !o && close()}
+      showClose
+      className="h-[min(36rem,calc(100vh-2rem))] max-h-[calc(100vh-2rem)] w-full max-w-xl overflow-hidden p-0"
     >
-      <DialogHeader>
-        <DialogTitle>Configurar capa</DialogTitle>
+      <DialogHeader className="shrink-0 border-b px-4 py-3 pr-14">
+        <DialogTitle>Propiedades de la capa</DialogTitle>
         <DialogDescription>
           Personalice el estilo y revise la información.
         </DialogDescription>
       </DialogHeader>
-      <div>
-        <div className="mb-3">
-          <Label>Nombre de capa</Label>
-          <Input
-            className="mt-1"
-            value={layer.name}
-            onChange={(e) =>
-              dispatch({
-                type: "updateLayer",
-                id: layer.id,
-                patch: { name: e.target.value },
-              })
-            }
-          />
-        </div>
-        <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
-          <TabsList>
-            <TabsTrigger
-              value="style"
-              current={tab}
-              onSelect={(v) => setTab(v as any)}
-            >
-              Estilo
-            </TabsTrigger>
+
+      <div className="shrink-0 space-y-1 border-b px-4 py-3">
+        <Label>Nombre de capa</Label>
+        <Input
+          value={layer.name}
+          onChange={(e) =>
+            dispatch({
+              type: "updateLayer",
+              id: layer.id,
+              patch: { name: e.target.value },
+            })
+          }
+        />
+      </div>
+
+      <Tabs
+        value={tab}
+        onValueChange={(v) => setTab(v as "style" | "info")}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <div className="shrink-0 border-b px-4 py-3">
+          <TabsList className="mb-0">
             <TabsTrigger
               value="info"
               current={tab}
-              onSelect={(v) => setTab(v as any)}
+              onSelect={(v) => setTab(v as "style" | "info")}
             >
               Información
             </TabsTrigger>
+            <TabsTrigger
+              value="style"
+              current={tab}
+              onSelect={(v) => setTab(v as "style" | "info")}
+            >
+              Estilo
+            </TabsTrigger>
           </TabsList>
+        </div>
+        <ScrollArea className="min-h-0 flex-1 px-4 py-3">
           <TabsContent value="style" current={tab}>
             <div className="grid gap-4">
               {isPoint && layer.pointStyle && (
@@ -481,30 +491,34 @@ export function LayerSettingsDialog(): JSX.Element | null {
             </div>
           </TabsContent>
           <TabsContent value="info" current={tab}>
-            <div className="grid gap-3 text-sm">
-              <div>
-                <span className="text-muted-foreground">Tipo:</span>{" "}
-                {layer.geometryType ?? "Desconocido"}
+            <div className="grid gap-4 text-sm">
+              <div className="grid gap-1">
+                <span className="text-muted-foreground">Tipo</span>
+                <span>{layer.geometryType ?? "Desconocido"}</span>
               </div>
-              <div>
-                <span className="text-muted-foreground">Features:</span>{" "}
-                {layer.stats?.featureCount ?? layer.data?.features.length ?? 0}
+              <div className="grid gap-1">
+                <span className="text-muted-foreground">Features</span>
+                <span>
+                  {layer.stats?.featureCount ?? layer.data?.features.length ?? 0}
+                </span>
               </div>
               {layer.stats?.bounds && (
-                <div>
-                  <span className="text-muted-foreground">Bounds:</span>{" "}
-                  {layer.stats.bounds.map((v) => v.toFixed(4)).join(", ")}
+                <div className="grid gap-1">
+                  <span className="text-muted-foreground">Bounds</span>
+                  <span className="break-all font-mono text-xs">
+                    {layer.stats.bounds.map((v) => v.toFixed(4)).join(", ")}
+                  </span>
                 </div>
               )}
               {layer.stats?.propertyKeys &&
                 layer.stats.propertyKeys.length > 0 && (
-                  <div>
-                    <div className="text-muted-foreground">Propiedades:</div>
-                    <div className="flex flex-wrap gap-2 mt-1">
+                  <div className="grid gap-1">
+                    <span className="text-muted-foreground">Propiedades</span>
+                    <div className="flex flex-wrap gap-2">
                       {layer.stats.propertyKeys.map((k) => (
                         <span
                           key={k}
-                          className="px-2 py-0.5 rounded bg-muted text-xs"
+                          className="rounded bg-muted px-2 py-0.5 text-xs"
                         >
                           {k}
                         </span>
@@ -514,16 +528,13 @@ export function LayerSettingsDialog(): JSX.Element | null {
                 )}
             </div>
           </TabsContent>
-        </Tabs>
-      </div>
-      <DialogFooter>
-        <Button
-          variant="secondary"
-          onClick={() => dispatch({ type: "setActiveLayer", id: undefined })}
-        >
-          X
+        </ScrollArea>
+      </Tabs>
+      {/* <DialogFooter className="mt-0 flex shrink-0 items-center justify-end gap-2 border-t px-4 py-3">
+        <Button variant="secondary" onClick={close}>
+          Cerrar
         </Button>
-      </DialogFooter>
+      </DialogFooter> */}
     </Dialog>
   );
 }
