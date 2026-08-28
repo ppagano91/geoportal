@@ -54,8 +54,19 @@ export function isDrawingSessionLayer(
 	return id === DRAWING_SESSION_LAYER_ID;
 }
 
-export function shouldRenderDrawingLayerAsGeoJson(layer: Layer): boolean {
-	return layer.type !== "drawing" || !isDrawingSessionLayer(layer);
+export function shouldRenderDrawingLayerAsGeoJson(
+	layer: Layer,
+	terraDrawTargetLayerId?: string,
+): boolean {
+	if (isDrawingSessionLayer(layer)) return false;
+	if (
+		layer.type === "editable" &&
+		terraDrawTargetLayerId != null &&
+		layer.id === terraDrawTargetLayerId
+	) {
+		return false;
+	}
+	return true;
 }
 
 export function inferGeometryType(

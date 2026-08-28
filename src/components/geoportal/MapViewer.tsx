@@ -31,6 +31,10 @@ import {
   whenStyleJsonReady,
 } from "./terraDraw";
 import { shouldRenderDrawingLayerAsGeoJson } from "../../persistence/drawingLayers";
+import {
+  getActiveEditableLayer,
+  getDrawDocument,
+} from "../../persistence/editableLayers";
 
 // import MapboxDraw from "@mapbox/mapbox-gl-draw";
 
@@ -735,7 +739,9 @@ export function MapViewer(): JSX.Element {
   const drawControlRef = useRef<MaplibreTerradrawControl | null>(null);
   const skipInitialSetStyleRef = useRef(true);
   const drawModeRef = useRef(state.drawMode);
-  const drawingsRef = useRef(state.drawings);
+  const suppressDrawSyncRef = useRef(false);
+  const terraDrawTargetIdRef = useRef<string | undefined>(undefined);
+  const prevDrawTargetRef = useRef<string | undefined | null>(null);
   const [popup, setPopup] = useState<{
     coord: [number, number];
     feature: any;
@@ -743,8 +749,17 @@ export function MapViewer(): JSX.Element {
   const [terrainOn, setTerrainOn] = useState(false);
   const [buildings3DEnabled, setBuildings3DEnabled] = useState(false);
   const syncOperationalLayersRef = useRef<(map: Map) => void>(() => {});
+  const editingLayer = getActiveEditableLayer(
+    state.layers,
+    state.activeLayerId,
+  );
+  const editingLayerId = editingLayer?.id;
+  const editingLayerIdRef = useRef(editingLayerId);
+  const drawDocument = getDrawDocument(state);
+  const drawDocumentRef = useRef(drawDocument);
   drawModeRef.current = state.drawMode;
-  drawingsRef.current = state.drawings;
+  editingLayerIdRef.current = editingLayerId;
+  drawDocumentRef.current = drawDocument;
 
   // const [features, setFeatures] = useState({});
 
@@ -786,7 +801,11 @@ export function MapViewer(): JSX.Element {
       .filter((id) => id.startsWith("src-"))
       .map((id) => id.replace(/^src-/, ""));
     for (const id of currentSources) {
-      if (!existingIds.has(id)) {
+      const layer = state.layers.find((item) => item.id === id);
+      if (
+        !layer ||
+        !shouldRenderDrawingLayerAsGeoJson(layer, terraDrawTargetIdRef.current)
+      ) {
         removeGeoJson(map, id);
       }
     }
@@ -803,7 +822,9 @@ export function MapViewer(): JSX.Element {
     for (const layer of state.layers) {
       if (layer.type === "wms") {
         addOrUpdateWms(map, layer);
-      } else if (shouldRenderDrawingLayerAsGeoJson(layer)) {
+      } else if (
+        shouldRenderDrawingLayerAsGeoJson(layer, terraDrawTargetIdRef.current)
+      ) {
         addOrUpdateGeoJson(map, layer);
       }
     }
@@ -888,12 +909,18 @@ export function MapViewer(): JSX.Element {
     };
 
     const syncDrawingsFromStore = (logCount = false) => {
+      if (suppressDrawSyncRef.current) return;
       const instance = drawControl.getTerraDrawInstance();
       if (!instance) return;
       const snapshot = instance.getSnapshot();
       const drawings = snapshotToFeatureCollection(snapshot);
       if (logCount) {
         console.log("[draw] feature count:", drawings.features.length);
+      }
+      const targetId = terraDrawTargetIdRef.current;
+      if (targetId) {
+        dispatch({ type: "replaceLayerFeatures", id: targetId, data: drawings });
+        return;
       }
       dispatch({ type: "replaceDrawings", drawings });
     };
@@ -953,14 +980,16 @@ export function MapViewer(): JSX.Element {
       if (instance) {
         instance.on("change", onDrawChange);
         instance.on("finish", onDrawFinish);
-        restoreFeaturesToTerraDraw(instance, drawingsRef.current);
+        restoreFeaturesToTerraDraw(instance, drawDocumentRef.current);
       }
       console.log("[draw] TerraDraw started");
+      terraDrawTargetIdRef.current = editingLayerIdRef.current;
+      prevDrawTargetRef.current = editingLayerIdRef.current;
       applyDrawMode();
       restartTerraDrawIfLayersMissing(map, drawControl);
       restoreFeaturesToTerraDraw(
         drawControl.getTerraDrawInstance(),
-        drawingsRef.current,
+        drawDocumentRef.current,
       );
       logDrawLayerIds(map, "layers after start");
     };
@@ -1045,7 +1074,7 @@ export function MapViewer(): JSX.Element {
           restartTerraDrawIfLayersMissing(map, drawControl);
           restoreFeaturesToTerraDraw(
             drawControl.getTerraDrawInstance(),
-            drawingsRef.current,
+            drawDocumentRef.current,
           );
         } else {
           attachDrawControl();
@@ -1202,7 +1231,7 @@ export function MapViewer(): JSX.Element {
       moveTerraDrawLayersToTop(map);
       restoreFeaturesToTerraDraw(
         drawControlRef.current?.getTerraDrawInstance(),
-        drawingsRef.current,
+        drawDocumentRef.current,
       );
       logDrawLayerIds(map, "layers after basemap change");
     };
@@ -1248,6 +1277,25 @@ export function MapViewer(): JSX.Element {
   useEffect(() => {
     const instance = drawControlRef.current?.getTerraDrawInstance();
     if (!instance?.enabled) return;
+    if (prevDrawTargetRef.current === editingLayerId) return;
+    prevDrawTargetRef.current = editingLayerId;
+    suppressDrawSyncRef.current = true;
+    try {
+      instance.clear();
+      restoreFeaturesToTerraDraw(instance, drawDocumentRef.current);
+    } finally {
+      suppressDrawSyncRef.current = false;
+    }
+    terraDrawTargetIdRef.current = editingLayerId;
+    const map = mapRef.current;
+    if (map) syncOperationalLayersRef.current(map);
+    drawEngineRef.current?.setMode(drawModeRef.current);
+  }, [editingLayerId]);
+
+  useEffect(() => {
+    if (editingLayerId) return;
+    const instance = drawControlRef.current?.getTerraDrawInstance();
+    if (!instance?.enabled) return;
     if (state.drawings.features.length === 0) {
       const remaining = snapshotToFeatureCollection(instance.getSnapshot());
       if (remaining.features.length === 0) return;
@@ -1256,7 +1304,7 @@ export function MapViewer(): JSX.Element {
       return;
     }
     restoreFeaturesToTerraDraw(instance, state.drawings);
-  }, [state.drawings]);
+  }, [state.drawings, editingLayerId]);
 
 
   return (

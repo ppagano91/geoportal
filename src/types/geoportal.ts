@@ -89,7 +89,9 @@ export type BaseMapStyle = 'streets' | 'satellite' | 'topo' | 'dark'
 
 export interface GeoPortalState {
 	layers: Layer[]
+	/** Capa seleccionada en el sidebar. Si es editable, es el destino de Terra Draw. */
 	activeLayerId?: string
+	layerSettingsOpen?: boolean
 	searchQuery: string
 	sidebarOpen: boolean
 	theme: 'light' | 'dark'

@@ -3,7 +3,7 @@ import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { ScrollArea } from "../ui/ScrollArea";
-import { ArrowDown, ArrowUp, Eye, EyeOff, Plus, Trash2, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, Eye, EyeOff, Plus, Settings2, Trash2, Upload } from "lucide-react";
 import type { Layer } from "../../types/geoportal";
 import { computeLayerStats } from "../../utils/stats";
 import { DRAWING_SESSION_LAYER_ID } from "../../persistence/drawingLayers";
@@ -155,7 +155,10 @@ export function Sidebar(): JSX.Element {
       <CreateEditableLayerDialog
         open={createEditableOpen}
         onOpenChange={setCreateEditableOpen}
-        onCreate={(layer) => dispatch({ type: "addLayer", layer })}
+        onCreate={(layer) => {
+          dispatch({ type: "addLayer", layer });
+          dispatch({ type: "setActiveLayer", id: layer.id });
+        }}
       />
       <div className="p-3">
         <Input
@@ -175,7 +178,12 @@ export function Sidebar(): JSX.Element {
         )}
         <div className="flex flex-col gap-2">
           {filtered.map((l) => (
-            <div key={l.id} className="surface p-2 flex items-center gap-2">
+            <div
+              key={l.id}
+              className={`surface p-2 flex items-center gap-2 ${
+                l.id === state.activeLayerId ? "ring-1 ring-ring" : ""
+              }`}
+            >
               <button
                 className="control h-8 w-8"
                 title={l.visible ? "Ocultar capa" : "Mostrar capa"}
@@ -195,8 +203,19 @@ export function Sidebar(): JSX.Element {
               </button>
               <button
                 className="flex-1 text-left truncate"
-                onClick={() => dispatch({ type: "setActiveLayer", id: l.id })}
-                title={l.name}
+                onClick={() =>
+                  dispatch({
+                    type: "setActiveLayer",
+                    id: state.activeLayerId === l.id ? undefined : l.id,
+                  })
+                }
+                title={
+                  l.type === "editable"
+                    ? state.activeLayerId === l.id
+                      ? "Clic para dejar de dibujar en esta capa"
+                      : "Seleccionar para dibujar en esta capa"
+                    : l.name
+                }
               >
                 <div className="font-medium">{l.name}</div>
                 <div className="text-xs text-muted-foreground">
@@ -204,6 +223,16 @@ export function Sidebar(): JSX.Element {
                 </div>
               </button>
               <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  title="Propiedades"
+                  onClick={() =>
+                    dispatch({ type: "openLayerSettings", id: l.id })
+                  }
+                >
+                  <Settings2 className="h-4 w-4" />
+                </Button>
                 <Button
                   variant="outline"
                   size="icon"

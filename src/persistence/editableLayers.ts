@@ -2,6 +2,7 @@ import type {
 	EditableGeometryType,
 	EditableLayer,
 	FieldType,
+	GeoPortalState,
 	Layer,
 	LayerField,
 } from "../types/geoportal";
@@ -43,6 +44,92 @@ export const FIELD_TYPE_OPTIONS: Array<{ value: FieldType; label: string }> = [
 
 export function isEditableLayer(layer: Layer): layer is EditableLayer {
 	return layer.type === "editable";
+}
+
+export function getActiveEditableLayer(
+	layers: Layer[],
+	activeLayerId?: string,
+): EditableLayer | undefined {
+	if (!activeLayerId) return undefined;
+	const layer = layers.find((item) => item.id === activeLayerId);
+	return layer && isEditableLayer(layer) ? layer : undefined;
+}
+
+export function geometryTypeToDrawMode(
+	type: EditableGeometryType,
+): Extract<GeoPortalState["drawMode"], "point" | "line" | "polygon"> {
+	switch (type) {
+		case "Point":
+			return "point";
+		case "LineString":
+			return "line";
+		case "Polygon":
+			return "polygon";
+	}
+}
+
+export function isDrawModeAllowedForEditable(
+	mode: GeoPortalState["drawMode"],
+	geometryType: EditableGeometryType,
+): boolean {
+	if (mode === "none" || mode === "select") return true;
+	return mode === geometryTypeToDrawMode(geometryType);
+}
+
+export function getDrawDocument(
+	state: Pick<GeoPortalState, "layers" | "activeLayerId" | "drawings">,
+): GeoJSON.FeatureCollection {
+	const editable = getActiveEditableLayer(state.layers, state.activeLayerId);
+	if (editable?.data) return editable.data;
+	return state.drawings;
+}
+
+const TERRA_DRAW_META_KEYS = new Set(["mode", "selected"]);
+
+function persistedProperties(
+	previous: GeoJSON.GeoJsonProperties | null | undefined,
+): GeoJSON.GeoJsonProperties {
+	if (!previous) return {};
+	const next: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(previous)) {
+		if (TERRA_DRAW_META_KEYS.has(key)) continue;
+		next[key] = value;
+	}
+	return next;
+}
+
+/** Conserva ids estables, descarta geometrías incompatibles y no copia el store de Terra Draw. */
+export function snapshotToEditableFeatures(
+	snapshot: GeoJSON.FeatureCollection,
+	layer: EditableLayer,
+): GeoJSON.FeatureCollection {
+	const previousById = new Map(
+		(layer.data?.features ?? []).map((feature) => [String(feature.id), feature]),
+	);
+	const features: GeoJSON.Feature[] = [];
+	const seen = new Set<string>();
+
+	for (const feature of snapshot.features) {
+		if (!feature.geometry || feature.geometry.type !== layer.geometryType) {
+			continue;
+		}
+		const id =
+			typeof feature.id === "string" || typeof feature.id === "number"
+				? feature.id
+				: crypto.randomUUID();
+		const key = String(id);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		const previous = previousById.get(key);
+		features.push({
+			type: "Feature",
+			id,
+			geometry: JSON.parse(JSON.stringify(feature.geometry)) as GeoJSON.Geometry,
+			properties: persistedProperties(previous?.properties),
+		});
+	}
+
+	return { type: "FeatureCollection", features };
 }
 
 export function isEditableGeometryType(

@@ -23,10 +23,10 @@ function toHex(s: string): string {
 export function LayerSettingsDialog(): JSX.Element | null {
   const ctx = useContext(GeoPortalContext)!;
   const { state, dispatch } = ctx;
-  const layer = useMemo(
-    () => state.layers.find((l) => l.id === state.activeLayerId),
-    [state.layers, state.activeLayerId],
-  );
+  const layer = useMemo(() => {
+    if (!state.layerSettingsOpen) return undefined;
+    return state.layers.find((l) => l.id === state.activeLayerId);
+  }, [state.layers, state.activeLayerId, state.layerSettingsOpen]);
   const [tab, setTab] = useState<"style" | "info">("style");
   const open = !!layer;
   if (!open || !layer) return null;
@@ -39,7 +39,7 @@ export function LayerSettingsDialog(): JSX.Element | null {
   const isPolygon =
     layer.geometryType === "Polygon" || layer.geometryType === "MultiPolygon";
 
-  const close = () => dispatch({ type: "setActiveLayer", id: undefined });
+  const close = () => dispatch({ type: "closeLayerSettings" });
 
   return (
     <Dialog
@@ -505,11 +505,7 @@ export function LayerSettingsDialog(): JSX.Element | null {
                   </div>
                   <div className="grid gap-1">
                     <span className="text-muted-foreground">Entidades</span>
-                    <span>
-                      {layer.stats?.featureCount ??
-                        layer.data?.features.length ??
-                        0}
-                    </span>
+                    <span>{layer.data?.features.length ?? 0}</span>
                   </div>
                   <div className="grid gap-1">
                     <span className="text-muted-foreground">Campos</span>

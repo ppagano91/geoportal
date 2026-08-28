@@ -15,6 +15,12 @@ import {
   upsertDrawingSessionLayer,
   emptyFeatureCollection,
 } from "../persistence/drawingLayers";
+import {
+  geometryTypeToDrawMode,
+  getActiveEditableLayer,
+  isDrawModeAllowedForEditable,
+  snapshotToEditableFeatures,
+} from "../persistence/editableLayers";
 
 type Action =
   | { type: "toggleSidebar" }
@@ -26,9 +32,12 @@ type Action =
   | { type: "toggleLayer"; id: string; visible: boolean }
   | { type: "updateLayer"; id: string; patch: Partial<Layer> }
   | { type: "setActiveLayer"; id?: string }
+  | { type: "openLayerSettings"; id: string }
+  | { type: "closeLayerSettings" }
   | { type: "setDrawMode"; mode: GeoPortalState["drawMode"] }
   | { type: "addDrawing"; feature: GeoJSON.Feature }
   | { type: "replaceDrawings"; drawings: GeoJSON.FeatureCollection }
+  | { type: "replaceLayerFeatures"; id: string; data: GeoJSON.FeatureCollection }
   | { type: "replaceTempDrawing"; feature: GeoJSON.Feature | null }
   | { type: "clearDrawings" }
   | { type: "saveDrawingsAsLayer" }
@@ -45,6 +54,7 @@ const initialState: GeoPortalState = {
   drawMode: "none",
   drawings: { type: "FeatureCollection", features: [] },
   wmsDialogOpen: false,
+  layerSettingsOpen: false,
 };
 
 function nextDrawingLayerName(layers: Layer[]): string {
@@ -56,6 +66,17 @@ function nextDrawingLayerName(layers: Layer[]): string {
   let n = 1;
   while (used.has(`dibujo ${n}`)) n += 1;
   return `Dibujo ${n}`;
+}
+
+function drawModeForSelection(
+  state: GeoPortalState,
+  nextId?: string,
+): GeoPortalState["drawMode"] {
+  const previous = getActiveEditableLayer(state.layers, state.activeLayerId);
+  const next = getActiveEditableLayer(state.layers, nextId);
+  if (next) return geometryTypeToDrawMode(next.geometryType);
+  if (previous && !next) return "none";
+  return state.drawMode;
 }
 
 function reducer(state: GeoPortalState, action: Action): GeoPortalState {
@@ -81,7 +102,10 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
     case "addLayer":
       return { ...state, layers: [...state.layers, action.layer] };
     case "removeLayer": {
+      const removed = state.layers.find((l) => l.id === action.id);
       const layers = state.layers.filter((l) => l.id !== action.id);
+      const leavingEditable =
+        state.activeLayerId === action.id && removed?.type === "editable";
       return {
         ...state,
         layers,
@@ -91,6 +115,9 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
             : state.drawings,
         activeLayerId:
           state.activeLayerId === action.id ? undefined : state.activeLayerId,
+        layerSettingsOpen:
+          state.activeLayerId === action.id ? false : state.layerSettingsOpen,
+        drawMode: leavingEditable ? "none" : state.drawMode,
       };
     }
     case "toggleLayer":
@@ -108,9 +135,34 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
         ),
       };
     case "setActiveLayer":
-      return { ...state, activeLayerId: action.id };
-    case "setDrawMode":
+      return {
+        ...state,
+        activeLayerId: action.id,
+        layerSettingsOpen: false,
+        drawMode: drawModeForSelection(state, action.id),
+      };
+    case "openLayerSettings":
+      return {
+        ...state,
+        activeLayerId: action.id,
+        layerSettingsOpen: true,
+        drawMode: drawModeForSelection(state, action.id),
+      };
+    case "closeLayerSettings":
+      return { ...state, layerSettingsOpen: false };
+    case "setDrawMode": {
+      const editable = getActiveEditableLayer(
+        state.layers,
+        state.activeLayerId,
+      );
+      if (
+        editable &&
+        !isDrawModeAllowedForEditable(action.mode, editable.geometryType)
+      ) {
+        return state;
+      }
       return { ...state, drawMode: action.mode };
+    }
     case "addDrawing": {
       const drawings: GeoJSON.FeatureCollection = {
         type: "FeatureCollection",
@@ -123,6 +175,9 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
       };
     }
     case "replaceDrawings": {
+      if (getActiveEditableLayer(state.layers, state.activeLayerId)) {
+        return state;
+      }
       if (featureCollectionsEqual(state.drawings, action.drawings)) {
         return state;
       }
@@ -130,6 +185,34 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
         ...state,
         drawings: action.drawings,
         layers: upsertDrawingSessionLayer(state.layers, action.drawings),
+      };
+    }
+    case "replaceLayerFeatures": {
+      const target = getActiveEditableLayer(state.layers, action.id);
+      if (!target) return state;
+      const data = snapshotToEditableFeatures(action.data, target);
+      if (target.data && featureCollectionsEqual(target.data, data)) {
+        return state;
+      }
+      return {
+        ...state,
+        layers: state.layers.map((layer) =>
+          layer.id === action.id
+            ? {
+                ...layer,
+                data,
+                stats: {
+                  featureCount: data.features.length,
+                  geometryType: target.geometryType,
+                  propertyKeys:
+                    layer.fields?.map((field) => field.name) ??
+                    layer.stats?.propertyKeys ??
+                    [],
+                  bounds: layer.stats?.bounds,
+                },
+              }
+            : layer,
+        ),
       };
     }
     case "replaceTempDrawing":
@@ -145,6 +228,9 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
         ),
       };
     case "saveDrawingsAsLayer": {
+      if (getActiveEditableLayer(state.layers, state.activeLayerId)) {
+        return state;
+      }
       const drawingData: GeoJSON.FeatureCollection = {
         type: "FeatureCollection",
         features: [...state.drawings.features],
