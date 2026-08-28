@@ -207,13 +207,13 @@ export function GeoPortalApp(): JSX.Element {
     const theme = savedTheme;
     const baseMap: GeoPortalState["baseMap"] =
       theme === "dark" ? "dark" : "streets";
-    const drawingLayers = loadDrawingLayers();
+    const persistedLayers = loadDrawingLayers();
     return {
       ...s,
       theme,
       baseMap,
-      layers: drawingLayers,
-      drawings: getSessionDrawings(drawingLayers),
+      layers: persistedLayers,
+      drawings: getSessionDrawings(persistedLayers),
     };
   });
 

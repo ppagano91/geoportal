@@ -14,6 +14,7 @@ import { Slider } from "../ui/Slider";
 import { Select } from "../ui/Select";
 import { Button } from "../ui/Button";
 import { ScrollArea } from "../ui/ScrollArea";
+import { fieldTypeLabel, geometryTypeLabel } from "../../persistence/editableLayers";
 
 function toHex(s: string): string {
   return /^#/.test(s) ? s : `#${s}`;
@@ -492,40 +493,95 @@ export function LayerSettingsDialog(): JSX.Element | null {
           </TabsContent>
           <TabsContent value="info" current={tab}>
             <div className="grid gap-4 text-sm">
-              <div className="grid gap-1">
-                <span className="text-muted-foreground">Tipo</span>
-                <span>{layer.geometryType ?? "Desconocido"}</span>
-              </div>
-              <div className="grid gap-1">
-                <span className="text-muted-foreground">Features</span>
-                <span>
-                  {layer.stats?.featureCount ?? layer.data?.features.length ?? 0}
-                </span>
-              </div>
-              {layer.stats?.bounds && (
-                <div className="grid gap-1">
-                  <span className="text-muted-foreground">Bounds</span>
-                  <span className="break-all font-mono text-xs">
-                    {layer.stats.bounds.map((v) => v.toFixed(4)).join(", ")}
-                  </span>
-                </div>
-              )}
-              {layer.stats?.propertyKeys &&
-                layer.stats.propertyKeys.length > 0 && (
+              {layer.type === "editable" ? (
+                <>
                   <div className="grid gap-1">
-                    <span className="text-muted-foreground">Propiedades</span>
-                    <div className="flex flex-wrap gap-2">
-                      {layer.stats.propertyKeys.map((k) => (
-                        <span
-                          key={k}
-                          className="rounded bg-muted px-2 py-0.5 text-xs"
-                        >
-                          {k}
-                        </span>
-                      ))}
-                    </div>
+                    <span className="text-muted-foreground">Tipo</span>
+                    <span>Capa editable</span>
                   </div>
-                )}
+                  <div className="grid gap-1">
+                    <span className="text-muted-foreground">Geometría</span>
+                    <span>{geometryTypeLabel(layer.geometryType)}</span>
+                  </div>
+                  <div className="grid gap-1">
+                    <span className="text-muted-foreground">Entidades</span>
+                    <span>
+                      {layer.stats?.featureCount ??
+                        layer.data?.features.length ??
+                        0}
+                    </span>
+                  </div>
+                  <div className="grid gap-1">
+                    <span className="text-muted-foreground">Campos</span>
+                    <span>{layer.fields?.length ?? 0}</span>
+                  </div>
+                  {(layer.fields?.length ?? 0) > 0 && (
+                    <div className="grid gap-2">
+                      <span className="text-muted-foreground">
+                        Definición de campos
+                      </span>
+                      <div className="overflow-hidden rounded-md border">
+                        <div className="grid grid-cols-[1fr_7rem] gap-2 border-b bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">
+                          <span>Nombre</span>
+                          <span>Tipo</span>
+                        </div>
+                        {layer.fields?.map((field) => (
+                          <div
+                            key={field.name}
+                            className="grid grid-cols-[1fr_7rem] gap-2 border-b px-3 py-1.5 last:border-b-0"
+                          >
+                            <span className="font-mono text-xs">
+                              {field.name}
+                            </span>
+                            <span>{fieldTypeLabel(field.type)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="grid gap-1">
+                    <span className="text-muted-foreground">Tipo</span>
+                    <span>{layer.geometryType ?? "Desconocido"}</span>
+                  </div>
+                  <div className="grid gap-1">
+                    <span className="text-muted-foreground">Features</span>
+                    <span>
+                      {layer.stats?.featureCount ??
+                        layer.data?.features.length ??
+                        0}
+                    </span>
+                  </div>
+                  {layer.stats?.bounds && (
+                    <div className="grid gap-1">
+                      <span className="text-muted-foreground">Bounds</span>
+                      <span className="break-all font-mono text-xs">
+                        {layer.stats.bounds.map((v) => v.toFixed(4)).join(", ")}
+                      </span>
+                    </div>
+                  )}
+                  {layer.stats?.propertyKeys &&
+                    layer.stats.propertyKeys.length > 0 && (
+                      <div className="grid gap-1">
+                        <span className="text-muted-foreground">
+                          Propiedades
+                        </span>
+                        <div className="flex flex-wrap gap-2">
+                          {layer.stats.propertyKeys.map((k) => (
+                            <span
+                              key={k}
+                              className="rounded bg-muted px-2 py-0.5 text-xs"
+                            >
+                              {k}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                </>
+              )}
             </div>
           </TabsContent>
         </ScrollArea>

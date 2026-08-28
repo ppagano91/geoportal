@@ -1,11 +1,17 @@
 import type {
 	DrawingLayer,
+	EditableLayer,
 	GeometryType,
 	Layer,
 	LineStyle,
 	PointStyle,
 	PolygonStyle,
 } from "../types/geoportal";
+import {
+	isEditableGeometryType,
+	isEditableLayer,
+	normalizeLayerFields,
+} from "./editableLayers";
 
 export const DRAWING_LAYERS_STORAGE_KEY = "geoportal:drawing-layers:v1";
 export const DRAWING_LAYERS_VERSION = 1 as const;
@@ -32,9 +38,11 @@ const GEOMETRY_TYPES = new Set<GeometryType>([
 	"MultiPolygon",
 ]);
 
+type PersistedOperationalLayer = DrawingLayer | EditableLayer;
+
 type DrawingLayersPayloadV1 = {
 	version: typeof DRAWING_LAYERS_VERSION;
-	layers: DrawingLayer[];
+	layers: PersistedOperationalLayer[];
 };
 
 let lastWrittenJson = "";
@@ -145,7 +153,7 @@ export function featureCollectionsEqual(
 	return JSON.stringify(a) === JSON.stringify(b);
 }
 
-export function loadDrawingLayers(): DrawingLayer[] {
+export function loadDrawingLayers(): Layer[] {
 	if (typeof localStorage === "undefined") {
 		return [];
 	}
@@ -180,52 +188,54 @@ export function loadDrawingLayers(): DrawingLayer[] {
 
 export function saveDrawingLayers(layers: Layer[]): void {
 	if (typeof localStorage === "undefined") return;
-	const drawingLayers = layers
-		.filter(isPersistedDrawingLayer)
-		.map((layer) => normalizeDrawingLayer(layer))
-		.filter((layer): layer is DrawingLayer => layer != null);
-	const nextJson = serializePayload(drawingLayers);
+	const persistedLayers = layers
+		.filter(isPersistedOperationalLayer)
+		.map((layer) => normalizePersistedLayer(layer))
+		.filter((layer): layer is PersistedOperationalLayer => layer != null);
+	const nextJson = serializePayload(persistedLayers);
 	if (nextJson === lastWrittenJson) return;
 	try {
 		localStorage.setItem(DRAWING_LAYERS_STORAGE_KEY, nextJson);
 		lastWrittenJson = nextJson;
 	} catch (error) {
 		console.warn(
-			"[geoportal] no se pudieron guardar las capas dibujadas en localStorage",
+			"[geoportal] no se pudieron guardar las capas persistidas en localStorage",
 			error,
 		);
 	}
 }
 
-function isPersistedDrawingLayer(layer: Layer): layer is DrawingLayer {
-	return layer.type === "drawing";
+function isPersistedOperationalLayer(
+	layer: Layer,
+): layer is PersistedOperationalLayer {
+	return layer.type === "drawing" || isEditableLayer(layer);
 }
 
-function parseDrawingLayersPayload(value: unknown): DrawingLayer[] {
+function parseDrawingLayersPayload(value: unknown): PersistedOperationalLayer[] {
 	if (!isRecord(value)) {
 		console.warn(
-			"[geoportal] capas dibujadas en localStorage tienen estructura inválida; se ignoran",
+			"[geoportal] capas persistidas en localStorage tienen estructura inválida; se ignoran",
 		);
 		return [];
 	}
 	if (value.version !== DRAWING_LAYERS_VERSION) {
 		console.warn(
-			`[geoportal] versión incompatible de capas dibujadas (${String(value.version)}); se ignoran`,
+			`[geoportal] versión incompatible de capas persistidas (${String(value.version)}); se ignoran`,
 		);
 		return [];
 	}
 	if (!Array.isArray(value.layers)) {
 		console.warn(
-			"[geoportal] capas dibujadas en localStorage no incluyen un array de capas; se ignoran",
+			"[geoportal] capas persistidas en localStorage no incluyen un array de capas; se ignoran",
 		);
 		return [];
 	}
 
-	const layers: DrawingLayer[] = [];
+	const layers: PersistedOperationalLayer[] = [];
 	const seenIds = new Set<string>();
 	let skipped = 0;
 	for (const item of value.layers) {
-		const layer = normalizeDrawingLayer(item);
+		const layer = normalizePersistedLayer(item);
 		if (!layer) {
 			skipped += 1;
 			continue;
@@ -239,10 +249,60 @@ function parseDrawingLayersPayload(value: unknown): DrawingLayer[] {
 	}
 	if (skipped > 0) {
 		console.warn(
-			`[geoportal] se omitieron ${skipped} capa(s) dibujada(s) inválidas o duplicadas en localStorage`,
+			`[geoportal] se omitieron ${skipped} capa(s) persistida(s) inválidas o duplicadas en localStorage`,
 		);
 	}
 	return layers;
+}
+
+function normalizePersistedLayer(
+	value: unknown,
+): PersistedOperationalLayer | null {
+	if (!isRecord(value)) return null;
+	if (value.type === "editable") {
+		return normalizeEditableLayer(value);
+	}
+	return normalizeDrawingLayer(value);
+}
+
+function normalizeEditableLayer(value: unknown): EditableLayer | null {
+	if (!isRecord(value)) return null;
+	if (typeof value.id !== "string" || value.id.trim() === "") return null;
+	if (typeof value.name !== "string") return null;
+	if (value.type !== "editable") return null;
+	if (typeof value.visible !== "boolean") return null;
+	if (!isEditableGeometryType(value.geometryType)) return null;
+	const fields = normalizeLayerFields(value.fields);
+	if (fields == null) return null;
+	const data =
+		value.data == null
+			? emptyFeatureCollection()
+			: normalizeFeatureCollection(value.data);
+	if (!data) return null;
+
+	const layer: EditableLayer = {
+		id: value.id,
+		name: value.name,
+		type: "editable",
+		visible: value.visible,
+		geometryType: value.geometryType,
+		fields,
+		data,
+		stats: {
+			featureCount: data.features.length,
+			geometryType: value.geometryType,
+			propertyKeys: fields.map((field) => field.name),
+		},
+	};
+
+	const pointStyle = normalizePointStyle(value.pointStyle);
+	if (pointStyle) layer.pointStyle = pointStyle;
+	const lineStyle = normalizeLineStyle(value.lineStyle);
+	if (lineStyle) layer.lineStyle = lineStyle;
+	const polygonStyle = normalizePolygonStyle(value.polygonStyle);
+	if (polygonStyle) layer.polygonStyle = polygonStyle;
+
+	return layer;
 }
 
 function normalizeDrawingLayer(value: unknown): DrawingLayer | null {
@@ -383,7 +443,7 @@ function normalizePolygonStyle(value: unknown): PolygonStyle | undefined {
 	};
 }
 
-function serializePayload(layers: DrawingLayer[]): string {
+function serializePayload(layers: PersistedOperationalLayer[]): string {
 	const payload: DrawingLayersPayloadV1 = {
 		version: DRAWING_LAYERS_VERSION,
 		layers,

@@ -43,11 +43,21 @@ export interface LayerStats {
 	uniqueValues?: Record<string, string[]>
 }
 
+export type FieldType = 'string' | 'number' | 'boolean' | 'date'
+
+export interface LayerField {
+	name: string
+	type: FieldType
+}
+
+/** Tipo geométrico único de una capa editable (sin geometrías mixtas). */
+export type EditableGeometryType = 'Point' | 'LineString' | 'Polygon'
+
 export interface Layer {
 	id: string
 	name: string
 	visible: boolean
-	type: 'base' | 'user' | 'system' | 'wms' | 'drawing'
+	type: 'base' | 'user' | 'system' | 'wms' | 'drawing' | 'editable'
 	data?: GeoJSON.FeatureCollection
 	geometryType?: GeometryType
 	pointStyle?: PointStyle
@@ -57,11 +67,21 @@ export interface Layer {
 	stats?: LayerStats
 	wmsUrl?: string
 	wmsLayers?: string
+	/** Esquema de atributos. Obligatorio en capas `editable`. */
+	fields?: LayerField[]
 }
 
 /** Capa de geometrías dibujadas. Fuente de verdad serializable (GeoJSON), no el store interno de Terra Draw. */
 export type DrawingLayer = Layer & {
 	type: 'drawing'
+	data: GeoJSON.FeatureCollection
+}
+
+/** Capa vectorial creada por el usuario, con esquema de campos y un único tipo geométrico. */
+export type EditableLayer = Layer & {
+	type: 'editable'
+	geometryType: EditableGeometryType
+	fields: LayerField[]
 	data: GeoJSON.FeatureCollection
 }
 

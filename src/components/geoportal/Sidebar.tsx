@@ -1,13 +1,14 @@
-import React, { useContext, useMemo, useRef } from "react";
+import React, { useContext, useMemo, useRef, useState } from "react";
 import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { ScrollArea } from "../ui/ScrollArea";
-import { Eye, EyeOff, Trash2, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, Eye, EyeOff, Plus, Trash2, Upload } from "lucide-react";
 import type { Layer } from "../../types/geoportal";
 import { computeLayerStats } from "../../utils/stats";
 import { DRAWING_SESSION_LAYER_ID } from "../../persistence/drawingLayers";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { geometryTypeLabel } from "../../persistence/editableLayers";
+import { CreateEditableLayerDialog } from "./CreateEditableLayerDialog";
 
 function inferGeometryType(
   fc: GeoJSON.FeatureCollection
@@ -29,10 +30,22 @@ function inferGeometryType(
   return undefined;
 }
 
+function layerListSubtitle(layer: Layer): string {
+  if (layer.type === "wms") return "WMS";
+  if (layer.type === "drawing") {
+    return `Dibujo · ${geometryTypeLabel(layer.geometryType)}`;
+  }
+  if (layer.type === "editable") {
+    return `Editable · ${geometryTypeLabel(layer.geometryType)}`;
+  }
+  return geometryTypeLabel(layer.geometryType);
+}
+
 export function Sidebar(): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
   const { state, dispatch } = ctx;
   const inputRef = useRef<HTMLInputElement>(null);
+  const [createEditableOpen, setCreateEditableOpen] = useState(false);
 
   const filtered = useMemo(
     () =>
@@ -132,7 +145,18 @@ export function Sidebar(): JSX.Element {
             </Button>
           </div>
         </div>
+        <Button
+          className="mt-3 w-full"
+          onClick={() => setCreateEditableOpen(true)}
+        >
+          <Plus className="mr-2 h-4 w-4" /> Crear capa editable
+        </Button>
       </div>
+      <CreateEditableLayerDialog
+        open={createEditableOpen}
+        onOpenChange={setCreateEditableOpen}
+        onCreate={(layer) => dispatch({ type: "addLayer", layer })}
+      />
       <div className="p-3">
         <Input
           placeholder="Filtrar capas"
@@ -145,7 +169,8 @@ export function Sidebar(): JSX.Element {
       <ScrollArea className="flex-1 px-3 pb-3">
         {filtered.length === 0 && (
           <div className="text-sm text-muted-foreground p-3">
-            No hay capas. Cargue un GeoJSON para comenzar.
+            No hay capas. Cargue un GeoJSON o cree una capa editable para
+            comenzar.
           </div>
         )}
         <div className="flex flex-col gap-2">
@@ -175,11 +200,7 @@ export function Sidebar(): JSX.Element {
               >
                 <div className="font-medium">{l.name}</div>
                 <div className="text-xs text-muted-foreground">
-                  {l.type === "wms"
-                    ? "WMS"
-                    : l.type === "drawing"
-                    ? `Dibujo · ${l.geometryType ?? "Desconocido"}`
-                    : l.geometryType ?? "Desconocido"}
+                  {layerListSubtitle(l)}
                 </div>
               </button>
               <div className="flex items-center gap-1">
