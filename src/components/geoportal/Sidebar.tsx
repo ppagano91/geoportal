@@ -6,6 +6,7 @@ import { ScrollArea } from "../ui/ScrollArea";
 import { Eye, EyeOff, Trash2, Upload } from "lucide-react";
 import type { Layer } from "../../types/geoportal";
 import { computeLayerStats } from "../../utils/stats";
+import { DRAWING_SESSION_LAYER_ID } from "../../persistence/drawingLayers";
 import { ArrowDown, ArrowUp } from "lucide-react";
 
 function inferGeometryType(
@@ -35,10 +36,12 @@ export function Sidebar(): JSX.Element {
 
   const filtered = useMemo(
     () =>
-      state.layers.filter((l) =>
-        l.name.toLowerCase().includes(state.searchQuery.toLowerCase())
+      state.layers.filter(
+        (l) =>
+          l.id !== DRAWING_SESSION_LAYER_ID &&
+          l.name.toLowerCase().includes(state.searchQuery.toLowerCase()),
       ),
-    [state.layers, state.searchQuery]
+    [state.layers, state.searchQuery],
   );
 
   function onDrop(e: React.DragEvent<HTMLDivElement>) {

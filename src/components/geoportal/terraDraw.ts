@@ -51,6 +51,94 @@ export function snapshotToFeatureCollection(
   };
 }
 
+const TERRA_DRAW_GEOMETRY_TYPES = new Set(["Point", "LineString", "Polygon"]);
+
+type TerraDrawLike = {
+  enabled: boolean;
+  getSnapshot: () => GeoJSONStoreFeatures[];
+  addFeatures: (features: GeoJSONStoreFeatures[]) => Array<{
+    valid?: boolean;
+    reason?: string;
+    id?: string | number;
+  }>;
+};
+
+function inferPersistedMode(feature: GeoJSON.Feature): string | null {
+  const mode = feature.properties?.mode;
+  if (typeof mode === "string" && PERSISTED_MODES.has(mode)) return mode;
+  switch (feature.geometry?.type) {
+    case "Point":
+      return "point";
+    case "LineString":
+      return "linestring";
+    case "Polygon":
+      return "polygon";
+    default:
+      return null;
+  }
+}
+
+function toTerraDrawFeature(
+  feature: GeoJSON.Feature,
+): GeoJSONStoreFeatures | null {
+  if (!feature.geometry) return null;
+  if (!TERRA_DRAW_GEOMETRY_TYPES.has(feature.geometry.type)) return null;
+  const mode = inferPersistedMode(feature);
+  if (!mode) return null;
+  if (typeof feature.id !== "string" && typeof feature.id !== "number") {
+    return null;
+  }
+  const raw: Record<string, unknown> = { ...(feature.properties ?? {}) };
+  delete raw.selected;
+  raw.mode = mode;
+  let properties: GeoJSONStoreFeatures["properties"];
+  try {
+    properties = JSON.parse(JSON.stringify(raw)) as GeoJSONStoreFeatures["properties"];
+  } catch {
+    properties = { mode };
+  }
+  return {
+    type: "Feature",
+    id: feature.id,
+    geometry: feature.geometry as GeoJSONStoreFeatures["geometry"],
+    properties,
+  };
+}
+
+/** Restaura features en Terra Draw sin duplicar ids ya presentes (StrictMode / style reload). */
+export function restoreFeaturesToTerraDraw(
+  instance: TerraDrawLike | null | undefined,
+  collection: GeoJSON.FeatureCollection,
+): void {
+  if (!instance?.enabled) return;
+  if (collection.features.length === 0) return;
+  const existingIds = new Set(
+    instance.getSnapshot().map((feature) => String(feature.id)),
+  );
+  const toAdd: GeoJSONStoreFeatures[] = [];
+  const addedIds = new Set<string>();
+  for (const feature of collection.features) {
+    const next = toTerraDrawFeature(feature);
+    if (!next) continue;
+    if (next.id != null) {
+      const key = String(next.id);
+      if (existingIds.has(key) || addedIds.has(key)) continue;
+      addedIds.add(key);
+    }
+    toAdd.push(next);
+  }
+  if (toAdd.length === 0) return;
+  try {
+    const results = instance.addFeatures(toAdd);
+    const failed = results.filter((result) => result.valid === false);
+    if (failed.length > 0) {
+      console.warn("[draw] failed to restore features", failed);
+    }
+  } catch (err) {
+    console.warn("[draw] failed to restore features", err);
+  }
+}
+
 export function moveTerraDrawLayersToTop(map: Map) {
   for (const id of TERRA_DRAW_LAYER_IDS) {
     if (map.getLayer(id)) {

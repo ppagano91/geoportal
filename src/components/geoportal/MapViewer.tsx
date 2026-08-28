@@ -24,11 +24,13 @@ import {
   mergeTerraDrawStyle,
   moveTerraDrawLayersToTop,
   restartTerraDrawIfLayersMissing,
+  restoreFeaturesToTerraDraw,
   snapshotToFeatureCollection,
   startTerraDraw,
   toTerraDrawMode,
   whenStyleJsonReady,
 } from "./terraDraw";
+import { shouldRenderDrawingLayerAsGeoJson } from "../../persistence/drawingLayers";
 
 // import MapboxDraw from "@mapbox/mapbox-gl-draw";
 
@@ -733,6 +735,7 @@ export function MapViewer(): JSX.Element {
   const drawControlRef = useRef<MaplibreTerradrawControl | null>(null);
   const skipInitialSetStyleRef = useRef(true);
   const drawModeRef = useRef(state.drawMode);
+  const drawingsRef = useRef(state.drawings);
   const [popup, setPopup] = useState<{
     coord: [number, number];
     feature: any;
@@ -741,6 +744,7 @@ export function MapViewer(): JSX.Element {
   const [buildings3DEnabled, setBuildings3DEnabled] = useState(false);
   const syncOperationalLayersRef = useRef<(map: Map) => void>(() => {});
   drawModeRef.current = state.drawMode;
+  drawingsRef.current = state.drawings;
 
   // const [features, setFeatures] = useState({});
 
@@ -799,7 +803,7 @@ export function MapViewer(): JSX.Element {
     for (const layer of state.layers) {
       if (layer.type === "wms") {
         addOrUpdateWms(map, layer);
-      } else {
+      } else if (shouldRenderDrawingLayerAsGeoJson(layer)) {
         addOrUpdateGeoJson(map, layer);
       }
     }
@@ -949,10 +953,15 @@ export function MapViewer(): JSX.Element {
       if (instance) {
         instance.on("change", onDrawChange);
         instance.on("finish", onDrawFinish);
+        restoreFeaturesToTerraDraw(instance, drawingsRef.current);
       }
       console.log("[draw] TerraDraw started");
       applyDrawMode();
       restartTerraDrawIfLayersMissing(map, drawControl);
+      restoreFeaturesToTerraDraw(
+        drawControl.getTerraDrawInstance(),
+        drawingsRef.current,
+      );
       logDrawLayerIds(map, "layers after start");
     };
     whenStyleJsonReady(map, attachDrawControl);
@@ -1034,6 +1043,10 @@ export function MapViewer(): JSX.Element {
       whenStyleJsonReady(map, () => {
         if (drawAttached) {
           restartTerraDrawIfLayersMissing(map, drawControl);
+          restoreFeaturesToTerraDraw(
+            drawControl.getTerraDrawInstance(),
+            drawingsRef.current,
+          );
         } else {
           attachDrawControl();
         }
@@ -1187,6 +1200,10 @@ export function MapViewer(): JSX.Element {
         applyBuildings3DState(map, buildings3DEnabled);
       } catch {}
       moveTerraDrawLayersToTop(map);
+      restoreFeaturesToTerraDraw(
+        drawControlRef.current?.getTerraDrawInstance(),
+        drawingsRef.current,
+      );
       logDrawLayerIds(map, "layers after basemap change");
     };
     map.once("style.load", applyAfterStyleReady);
@@ -1231,11 +1248,14 @@ export function MapViewer(): JSX.Element {
   useEffect(() => {
     const instance = drawControlRef.current?.getTerraDrawInstance();
     if (!instance?.enabled) return;
-    if (state.drawings.features.length > 0) return;
-    const remaining = snapshotToFeatureCollection(instance.getSnapshot());
-    if (remaining.features.length === 0) return;
-    instance.clear();
-    console.log("[draw] feature count:", 0);
+    if (state.drawings.features.length === 0) {
+      const remaining = snapshotToFeatureCollection(instance.getSnapshot());
+      if (remaining.features.length === 0) return;
+      instance.clear();
+      console.log("[draw] feature count:", 0);
+      return;
+    }
+    restoreFeaturesToTerraDraw(instance, state.drawings);
   }, [state.drawings]);
 
 

@@ -59,6 +59,12 @@ export interface Layer {
 	wmsLayers?: string
 }
 
+/** Capa de geometrías dibujadas. Fuente de verdad serializable (GeoJSON), no el store interno de Terra Draw. */
+export type DrawingLayer = Layer & {
+	type: 'drawing'
+	data: GeoJSON.FeatureCollection
+}
+
 export type BaseMapStyle = 'streets' | 'satellite' | 'topo' | 'dark'
 
 export interface GeoPortalState {

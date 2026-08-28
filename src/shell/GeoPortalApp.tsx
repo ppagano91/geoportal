@@ -5,6 +5,16 @@ import { Sidebar } from "../components/geoportal/Sidebar";
 import { MapViewer } from "../components/geoportal/MapViewer";
 import { WmsDialog } from "../components/geoportal/WmsDialog";
 import { LayerSettingsDialog } from "../components/geoportal/LayerSettingsDialog";
+import {
+  DRAWING_SESSION_LAYER_ID,
+  createDrawingLayer,
+  featureCollectionsEqual,
+  getSessionDrawings,
+  loadDrawingLayers,
+  saveDrawingLayers,
+  upsertDrawingSessionLayer,
+  emptyFeatureCollection,
+} from "../persistence/drawingLayers";
 
 type Action =
   | { type: "toggleSidebar" }
@@ -37,30 +47,10 @@ const initialState: GeoPortalState = {
   wmsDialogOpen: false,
 };
 
-function inferGeometryType(
-  fc: GeoJSON.FeatureCollection,
-): Layer["geometryType"] {
-  for (const f of fc.features) {
-    const t = f.geometry?.type;
-    if (
-      t &&
-      (t === "Point" ||
-        t === "MultiPoint" ||
-        t === "LineString" ||
-        t === "MultiLineString" ||
-        t === "Polygon" ||
-        t === "MultiPolygon")
-    ) {
-      return t;
-    }
-  }
-  return undefined;
-}
-
 function nextDrawingLayerName(layers: Layer[]): string {
   const used = new Set(
     layers
-      .filter((l) => l.type === "drawing")
+      .filter((l) => l.type === "drawing" && l.id !== DRAWING_SESSION_LAYER_ID)
       .map((l) => l.name.trim().toLowerCase()),
   );
   let n = 1;
@@ -82,7 +72,7 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
           action.theme === "dark"
             ? "dark"
             : state.baseMap === "dark"
-              ? "light"
+              ? "streets"
               : state.baseMap,
       };
     }
@@ -90,11 +80,19 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
       return { ...state, baseMap: action.baseMap };
     case "addLayer":
       return { ...state, layers: [...state.layers, action.layer] };
-    case "removeLayer":
+    case "removeLayer": {
+      const layers = state.layers.filter((l) => l.id !== action.id);
       return {
         ...state,
-        layers: state.layers.filter((l) => l.id !== action.id),
+        layers,
+        drawings:
+          action.id === DRAWING_SESSION_LAYER_ID
+            ? emptyFeatureCollection()
+            : state.drawings,
+        activeLayerId:
+          state.activeLayerId === action.id ? undefined : state.activeLayerId,
       };
+    }
     case "toggleLayer":
       return {
         ...state,
@@ -118,52 +116,54 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
         type: "FeatureCollection",
         features: [...state.drawings.features, action.feature],
       };
-      return { ...state, drawings };
+      return {
+        ...state,
+        drawings,
+        layers: upsertDrawingSessionLayer(state.layers, drawings),
+      };
     }
-    case "replaceDrawings":
-      return { ...state, drawings: action.drawings };
+    case "replaceDrawings": {
+      if (featureCollectionsEqual(state.drawings, action.drawings)) {
+        return state;
+      }
+      return {
+        ...state,
+        drawings: action.drawings,
+        layers: upsertDrawingSessionLayer(state.layers, action.drawings),
+      };
+    }
     case "replaceTempDrawing":
       // handled inside MapViewer; state storage optional; skip for now
       return state;
     case "clearDrawings":
       return {
         ...state,
-        drawings: { type: "FeatureCollection", features: [] },
+        drawings: emptyFeatureCollection(),
+        layers: upsertDrawingSessionLayer(
+          state.layers,
+          emptyFeatureCollection(),
+        ),
       };
     case "saveDrawingsAsLayer": {
-      const id = crypto.randomUUID();
       const drawingData: GeoJSON.FeatureCollection = {
         type: "FeatureCollection",
         features: [...state.drawings.features],
       };
       const color_code =
         "#" + Math.floor(Math.random() * 16777215).toString(16);
-      const layer: Layer = {
-        id,
+      const layer = createDrawingLayer({
+        id: crypto.randomUUID(),
         name: nextDrawingLayerName(state.layers),
-        type: "drawing",
-        visible: true,
         data: drawingData,
-        geometryType: inferGeometryType(drawingData),
-        pointStyle: {
-          type: "circle",
-          size: 10,
-          color: color_code,
-          strokeColor: color_code,
-          strokeWidth: 1.5,
-        },
-        lineStyle: { color: color_code, width: 2, lineCap: "round" },
-        polygonStyle: {
-          fillColor: color_code,
-          fillOpacity: 0.2,
-          strokeColor: color_code,
-          strokeWidth: 1.5,
-        },
-      };
+        color: color_code,
+      });
       return {
         ...state,
-        layers: [...state.layers, layer],
-        drawings: { type: "FeatureCollection", features: [] },
+        layers: [
+          ...state.layers.filter((l) => l.id !== DRAWING_SESSION_LAYER_ID),
+          layer,
+        ],
+        drawings: emptyFeatureCollection(),
         drawMode: "none",
       };
     }
@@ -200,19 +200,31 @@ export const GeoPortalContext = React.createContext<{
 } | null>(null);
 
 export function GeoPortalApp(): JSX.Element {
-  const [state, dispatch] = useReducer(reducer, initialState, (s) => {
+  const [state, dispatch] = useReducer(reducer, initialState, (s): GeoPortalState => {
     const savedTheme =
       (localStorage.getItem("geoportal:theme") as "light" | "dark" | null) ??
       s.theme;
     const theme = savedTheme;
-    const baseMap = theme === "dark" ? "dark" : "light";
-    return { ...s, theme, baseMap };
+    const baseMap: GeoPortalState["baseMap"] =
+      theme === "dark" ? "dark" : "streets";
+    const drawingLayers = loadDrawingLayers();
+    return {
+      ...s,
+      theme,
+      baseMap,
+      layers: drawingLayers,
+      drawings: getSessionDrawings(drawingLayers),
+    };
   });
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", state.theme === "dark");
     localStorage.setItem("geoportal:theme", state.theme);
   }, [state.theme]);
+
+  useEffect(() => {
+    saveDrawingLayers(state.layers);
+  }, [state.layers]);
 
   const drawEngineRef = useRef<DrawEngine | null>(null);
   const ctx = useMemo(
