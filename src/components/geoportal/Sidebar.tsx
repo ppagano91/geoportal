@@ -211,7 +211,7 @@ export function Sidebar(): JSX.Element {
             comenzar.
           </div>
         )}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 mt-1">
           {filtered.map((l) => (
             <div
               key={l.id}

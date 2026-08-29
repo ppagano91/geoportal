@@ -88,20 +88,11 @@ function toTerraDrawFeature(
   if (typeof feature.id !== "string" && typeof feature.id !== "number") {
     return null;
   }
-  const raw: Record<string, unknown> = { ...(feature.properties ?? {}) };
-  delete raw.selected;
-  raw.mode = mode;
-  let properties: GeoJSONStoreFeatures["properties"];
-  try {
-    properties = JSON.parse(JSON.stringify(raw)) as GeoJSONStoreFeatures["properties"];
-  } catch {
-    properties = { mode };
-  }
   return {
     type: "Feature",
     id: feature.id,
     geometry: feature.geometry as GeoJSONStoreFeatures["geometry"],
-    properties,
+    properties: { mode },
   };
 }
 

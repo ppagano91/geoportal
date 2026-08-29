@@ -86,6 +86,32 @@ export function getDrawDocument(
 
 const TERRA_DRAW_META_KEYS = new Set(["mode", "selected"]);
 
+export type FeaturePropertyValue = string | number | boolean | null;
+
+function defaultValueForFieldType(type: FieldType): FeaturePropertyValue {
+	switch (type) {
+		case "string":
+			return "";
+		case "number":
+			return null;
+		case "boolean":
+			return false;
+		case "date":
+			return null;
+	}
+}
+
+/** Objeto nuevo por llamada. No reutilizar el resultado entre features. */
+export function createInitialFeatureProperties(
+	fields: LayerField[] = [],
+): GeoJSON.GeoJsonProperties {
+	const properties: Record<string, FeaturePropertyValue> = {};
+	for (const field of fields) {
+		properties[field.name] = defaultValueForFieldType(field.type);
+	}
+	return properties;
+}
+
 function persistedProperties(
 	previous: GeoJSON.GeoJsonProperties | null | undefined,
 ): GeoJSON.GeoJsonProperties {
@@ -98,7 +124,74 @@ function persistedProperties(
 	return next;
 }
 
-/** Conserva ids estables, descarta geometrías incompatibles y no copia el store de Terra Draw. */
+/** Defaults del esquema + valores ya guardados, sin metadatos de Terra Draw. */
+export function propertiesForEditableFeature(
+	previous: GeoJSON.GeoJsonProperties | null | undefined,
+	fields: LayerField[] = [],
+): GeoJSON.GeoJsonProperties {
+	return {
+		...createInitialFeatureProperties(fields),
+		...persistedProperties(previous),
+	};
+}
+
+export function coerceFeaturePropertyValue(
+	type: FieldType,
+	value: unknown,
+): FeaturePropertyValue {
+	switch (type) {
+		case "string":
+			return value == null ? "" : String(value);
+		case "number": {
+			if (value == null || value === "") return null;
+			if (typeof value === "number") {
+				return Number.isFinite(value) ? value : null;
+			}
+			if (typeof value === "string") {
+				const trimmed = value.trim();
+				if (trimmed === "") return null;
+				const parsed = Number(trimmed);
+				return Number.isFinite(parsed) ? parsed : null;
+			}
+			return null;
+		}
+		case "boolean":
+			return value === true;
+		case "date": {
+			if (value == null || value === "") return null;
+			if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+				return value;
+			}
+			return null;
+		}
+	}
+}
+
+export function buildFeatureProperties(
+	fields: LayerField[],
+	values: Record<string, unknown>,
+): GeoJSON.GeoJsonProperties {
+	const properties: Record<string, FeaturePropertyValue> = {};
+	for (const field of fields) {
+		properties[field.name] = coerceFeaturePropertyValue(
+			field.type,
+			values[field.name],
+		);
+	}
+	return properties;
+}
+
+export function getEditableFeature(
+	layer: EditableLayer | undefined,
+	featureId: string | number | undefined,
+): GeoJSON.Feature | undefined {
+	if (!layer || featureId == null) return undefined;
+	return layer.data.features.find(
+		(feature) => String(feature.id) === String(featureId),
+	);
+}
+
+/** Conserva ids estables, actualiza geometry y preserva properties por id. */
 export function snapshotToEditableFeatures(
 	snapshot: GeoJSON.FeatureCollection,
 	layer: EditableLayer,
@@ -125,7 +218,10 @@ export function snapshotToEditableFeatures(
 			type: "Feature",
 			id,
 			geometry: JSON.parse(JSON.stringify(feature.geometry)) as GeoJSON.Geometry,
-			properties: persistedProperties(previous?.properties),
+			properties: propertiesForEditableFeature(
+				previous?.properties,
+				layer.fields,
+			),
 		});
 	}
 

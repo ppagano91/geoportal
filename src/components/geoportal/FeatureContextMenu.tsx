@@ -4,7 +4,7 @@ export function FeatureContextMenu({
   x,
   y,
   container,
-  editAttributesDisabled = true,
+  editAttributesDisabled = false,
   onClose,
   onEditAttributes,
   onZoom,
@@ -67,11 +67,7 @@ export function FeatureContextMenu({
         type="button"
         role="menuitem"
         disabled={editAttributesDisabled}
-        title={
-          editAttributesDisabled
-            ? "Disponible en la próxima etapa"
-            : "Editar atributos"
-        }
+        title="Editar atributos"
         className="flex w-full px-3 py-1.5 text-left hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
         onClick={onEditAttributes}
       >

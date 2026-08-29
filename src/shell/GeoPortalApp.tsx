@@ -5,6 +5,7 @@ import { Sidebar } from "../components/geoportal/Sidebar";
 import { MapViewer } from "../components/geoportal/MapViewer";
 import { WmsDialog } from "../components/geoportal/WmsDialog";
 import { LayerSettingsDialog } from "../components/geoportal/LayerSettingsDialog";
+import { FeatureAttributesDialog } from "../components/geoportal/FeatureAttributesDialog";
 import {
   DRAWING_SESSION_LAYER_ID,
   createDrawingLayer,
@@ -17,6 +18,7 @@ import {
 } from "../persistence/drawingLayers";
 import {
   geometryTypeToDrawMode,
+  getEditableFeature,
   getEditableLayerById,
   isDrawModeAllowedForEditable,
   snapshotToEditableFeatures,
@@ -36,7 +38,15 @@ type Action =
   | { type: "closeLayerSettings" }
   | { type: "startEditingLayer"; id: string }
   | { type: "stopEditingLayer" }
-  | { type: "setSelectedFeature"; id?: string | number }
+  | { type: "setSelectedFeature"; id?: string | number; layerId?: string }
+  | { type: "openFeatureAttributes"; layerId: string; featureId: string | number; skipIfOpen?: boolean }
+  | { type: "closeFeatureAttributes" }
+  | {
+      type: "updateFeatureProperties";
+      layerId: string;
+      featureId: string | number;
+      properties: GeoJSON.GeoJsonProperties;
+    }
   | { type: "setDrawMode"; mode: GeoPortalState["drawMode"] }
   | { type: "addDrawing"; feature: GeoJSON.Feature }
   | { type: "replaceDrawings"; drawings: GeoJSON.FeatureCollection }
@@ -70,6 +80,40 @@ function nextDrawingLayerName(layers: Layer[]): string {
   let n = 1;
   while (used.has(`dibujo ${n}`)) n += 1;
   return `Dibujo ${n}`;
+}
+
+function selectionIfFeatureMissing(
+  state: GeoPortalState,
+  layerId: string,
+  data: GeoJSON.FeatureCollection,
+): Pick<
+  GeoPortalState,
+  "selectedFeatureId" | "selectedFeatureLayerId" | "featureAttributesOpen"
+> {
+  if (state.selectedFeatureLayerId !== layerId) {
+    return {
+      selectedFeatureId: state.selectedFeatureId,
+      selectedFeatureLayerId: state.selectedFeatureLayerId,
+      featureAttributesOpen: state.featureAttributesOpen,
+    };
+  }
+  const stillThere =
+    state.selectedFeatureId != null &&
+    data.features.some(
+      (feature) => String(feature.id) === String(state.selectedFeatureId),
+    );
+  if (stillThere) {
+    return {
+      selectedFeatureId: state.selectedFeatureId,
+      selectedFeatureLayerId: state.selectedFeatureLayerId,
+      featureAttributesOpen: state.featureAttributesOpen,
+    };
+  }
+  return {
+    selectedFeatureId: undefined,
+    selectedFeatureLayerId: undefined,
+    featureAttributesOpen: false,
+  };
 }
 
 function patchEditableLayerData(
@@ -128,7 +172,18 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
         editingLayerId: leavingEdit ? undefined : state.editingLayerId,
         layerSettingsOpen:
           state.activeLayerId === action.id ? false : state.layerSettingsOpen,
-        selectedFeatureId: leavingEdit ? undefined : state.selectedFeatureId,
+        selectedFeatureId:
+          leavingEdit || state.selectedFeatureLayerId === action.id
+            ? undefined
+            : state.selectedFeatureId,
+        selectedFeatureLayerId:
+          leavingEdit || state.selectedFeatureLayerId === action.id
+            ? undefined
+            : state.selectedFeatureLayerId,
+        featureAttributesOpen:
+          state.selectedFeatureLayerId === action.id
+            ? false
+            : state.featureAttributesOpen,
         drawMode: leavingEdit ? "none" : state.drawMode,
       };
     }
@@ -178,7 +233,56 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
         drawMode: "none",
       };
     case "setSelectedFeature":
-      return { ...state, selectedFeatureId: action.id };
+      return {
+        ...state,
+        selectedFeatureId: action.id,
+        selectedFeatureLayerId:
+          action.id == null
+            ? undefined
+            : (action.layerId ?? state.selectedFeatureLayerId),
+      };
+    case "openFeatureAttributes": {
+      if (action.skipIfOpen && state.featureAttributesOpen) return state;
+      const layer = getEditableLayerById(state.layers, action.layerId);
+      const feature = getEditableFeature(layer, action.featureId);
+      if (!layer || !feature || feature.id == null) return state;
+      return {
+        ...state,
+        selectedFeatureLayerId: action.layerId,
+        selectedFeatureId: action.featureId,
+        featureAttributesOpen: true,
+      };
+    }
+    case "closeFeatureAttributes":
+      if (!state.featureAttributesOpen) return state;
+      return { ...state, featureAttributesOpen: false };
+    case "updateFeatureProperties": {
+      const target = getEditableLayerById(state.layers, action.layerId);
+      if (!target?.data) return state;
+      let found = false;
+      const features = target.data.features.map((feature) => {
+        if (String(feature.id) !== String(action.featureId)) return feature;
+        found = true;
+        return {
+          ...feature,
+          properties: { ...(action.properties ?? {}) },
+        };
+      });
+      if (!found) return state;
+      const data: GeoJSON.FeatureCollection = {
+        type: "FeatureCollection",
+        features,
+      };
+      return {
+        ...state,
+        layers: state.layers.map((layer) =>
+          layer.id === action.layerId
+            ? patchEditableLayerData(layer, data)
+            : layer,
+        ),
+        featureAttributesOpen: false,
+      };
+    }
     case "setDrawMode": {
       const editing = getEditableLayerById(
         state.layers,
@@ -228,6 +332,7 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
         layers: state.layers.map((layer) =>
           layer.id === action.id ? patchEditableLayerData(layer, data) : layer,
         ),
+        ...selectionIfFeatureMissing(state, action.id, data),
       };
     }
     case "removeLayerFeature": {
@@ -248,10 +353,23 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
             : layer,
         ),
         selectedFeatureId:
+          state.selectedFeatureLayerId === action.layerId &&
           state.selectedFeatureId != null &&
           String(state.selectedFeatureId) === String(action.featureId)
             ? undefined
             : state.selectedFeatureId,
+        selectedFeatureLayerId:
+          state.selectedFeatureLayerId === action.layerId &&
+          state.selectedFeatureId != null &&
+          String(state.selectedFeatureId) === String(action.featureId)
+            ? undefined
+            : state.selectedFeatureLayerId,
+        featureAttributesOpen:
+          state.selectedFeatureLayerId === action.layerId &&
+          state.selectedFeatureId != null &&
+          String(state.selectedFeatureId) === String(action.featureId)
+            ? false
+            : state.featureAttributesOpen,
       };
     }
     case "replaceTempDrawing":
@@ -376,6 +494,7 @@ export function GeoPortalApp(): JSX.Element {
           <div className="flex-1 relative">
             <MapViewer />
             <LayerSettingsDialog />
+            <FeatureAttributesDialog />
             <WmsDialog
               open={state.wmsDialogOpen}
               onOpenChange={(o) =>

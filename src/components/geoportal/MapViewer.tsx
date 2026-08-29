@@ -855,6 +855,8 @@ export function MapViewer(): JSX.Element {
   const suppressDrawSyncRef = useRef(false);
   const terraDrawTargetIdRef = useRef<string | undefined>(undefined);
   const prevDrawTargetRef = useRef<string | undefined | null>(null);
+  const knownEditableFeatureIdsRef = useRef<Set<string>>(new Set());
+  const featureAttributesOpenRef = useRef(!!state.featureAttributesOpen);
   const [featureMenu, setFeatureMenu] = useState<{
     layerId: string;
     featureId: string | number;
@@ -881,6 +883,7 @@ export function MapViewer(): JSX.Element {
   editingLayerIdRef.current = editingLayerId;
   layersRef.current = state.layers;
   drawDocumentRef.current = drawDocument;
+  featureAttributesOpenRef.current = !!state.featureAttributesOpen;
 
   // const [features, setFeatures] = useState({});
 
@@ -1025,6 +1028,7 @@ export function MapViewer(): JSX.Element {
       dispatch({
         type: "setSelectedFeature",
         id: editableHit.feature.id,
+        layerId: editableHit.layer.id,
       });
     };
 
@@ -1154,9 +1158,42 @@ export function MapViewer(): JSX.Element {
     const onDrawChange = () => {
       syncDrawingsFromStore();
     };
-    const onDrawFinish = () => {
+    const onDrawFinish = (id?: string | number) => {
+      if (suppressDrawSyncRef.current) return;
       console.log("[draw] feature created");
       syncDrawingsFromStore(true);
+      const targetId = terraDrawTargetIdRef.current;
+      const instance = drawControl.getTerraDrawInstance();
+      const snapshotIds = new Set(
+        instance
+          ? snapshotToFeatureCollection(instance.getSnapshot())
+              .features.map((feature) =>
+                feature.id == null ? "" : String(feature.id),
+              )
+              .filter(Boolean)
+          : [],
+      );
+      const createdKeys = [...snapshotIds].filter(
+        (key) => !knownEditableFeatureIdsRef.current.has(key),
+      );
+      knownEditableFeatureIdsRef.current = snapshotIds;
+      if (!targetId) return;
+      const createdId =
+        id != null && createdKeys.includes(String(id))
+          ? id
+          : createdKeys.length === 1
+            ? createdKeys[0]
+            : undefined;
+      if (createdId == null) return;
+      const layer = getEditableLayerById(layersRef.current, targetId);
+      if (!layer || layer.fields.length === 0) return;
+      if (featureAttributesOpenRef.current) return;
+      dispatch({
+        type: "openFeatureAttributes",
+        layerId: targetId,
+        featureId: createdId,
+        skipIfOpen: true,
+      });
     };
 
     let drawAttached = false;
@@ -1176,6 +1213,11 @@ export function MapViewer(): JSX.Element {
       console.log("[draw] TerraDraw started");
       terraDrawTargetIdRef.current = editingLayerIdRef.current;
       prevDrawTargetRef.current = editingLayerIdRef.current;
+      knownEditableFeatureIdsRef.current = new Set(
+        drawDocumentRef.current.features
+          .map((feature) => (feature.id == null ? "" : String(feature.id)))
+          .filter(Boolean),
+      );
       applyDrawMode();
       restartTerraDrawIfLayersMissing(map, drawControl);
       restoreFeaturesToTerraDraw(
@@ -1470,6 +1512,11 @@ export function MapViewer(): JSX.Element {
       suppressDrawSyncRef.current = false;
     }
     terraDrawTargetIdRef.current = editingLayerId;
+    knownEditableFeatureIdsRef.current = new Set(
+      drawDocumentRef.current.features
+        .map((feature) => (feature.id == null ? "" : String(feature.id)))
+        .filter(Boolean),
+    );
     const map = mapRef.current;
     if (map) syncOperationalLayersRef.current(map);
     drawEngineRef.current?.setMode(drawModeRef.current);
@@ -1665,6 +1712,14 @@ export function MapViewer(): JSX.Element {
             setFeatureMenu(null);
             dispatch({ type: "setSelectedFeature", id: undefined });
           }}
+          onEditAttributes={() => {
+            dispatch({
+              type: "openFeatureAttributes",
+              layerId: featureMenu.layerId,
+              featureId: featureMenu.featureId,
+            });
+            setFeatureMenu(null);
+          }}
           onZoom={() => {
             const map = mapRef.current;
             if (map) zoomToFeature(map, contextMenuFeature);
@@ -1718,6 +1773,7 @@ export function MapViewer(): JSX.Element {
                 });
               }
               setPendingDelete(null);
+              dispatch({ type: "closeFeatureAttributes" });
               dispatch({ type: "setSelectedFeature", id: undefined });
             }}
           >

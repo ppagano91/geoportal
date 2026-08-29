@@ -95,6 +95,10 @@ export interface GeoPortalState {
 	editingLayerId?: string
 	/** Entidad objetivo de acciones contextuales. */
 	selectedFeatureId?: string | number
+	/** Capa de la entidad seleccionada. Junto con `selectedFeatureId` identifica la feature. */
+	selectedFeatureLayerId?: string
+	/** Modal de atributos de una entidad. */
+	featureAttributesOpen?: boolean
 	layerSettingsOpen?: boolean
 	searchQuery: string
 	sidebarOpen: boolean
