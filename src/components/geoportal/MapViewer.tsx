@@ -12,7 +12,6 @@ import { MaplibreTerradrawControl } from "@watergis/maplibre-gl-terradraw";
 import "@watergis/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css";
 import { GeoPortalContext, type DrawEngine } from "../../shell/GeoPortalApp";
 import { BaseMapControl } from "./BaseMapControl";
-import { FeaturePopup } from "./FeaturePopup";
 import { FeatureContextMenu } from "./FeatureContextMenu";
 import {
   Dialog,
@@ -43,8 +42,9 @@ import { shouldRenderDrawingLayerAsGeoJson } from "../../persistence/drawingLaye
 import {
   getDrawDocument,
   getEditableLayerById,
+  isEditableLayer,
 } from "../../persistence/editableLayers";
-import { zoomToFeature } from "../../utils/geo";
+import { distanceToFeaturePx, zoomToFeature } from "../../utils/geo";
 
 // import MapboxDraw from "@mapbox/mapbox-gl-draw";
 
@@ -752,14 +752,69 @@ function featureIdFromHit(
   return undefined;
 }
 
+const FEATURE_HIT_PX = 16;
+const GEOJSON_LAYER_PREFIXES = [
+  "pt-sym-",
+  "pt-un-",
+  "pt-us-",
+  "pt-",
+  "ln-",
+  "pf-",
+  "pl-",
+] as const;
+
 function featureFromEditableLayer(
-  layer: EditableLayer,
+  layer: EditableLayer | undefined,
   featureId: string | number | undefined,
 ): GeoJSON.Feature | undefined {
-  if (featureId == null) return undefined;
+  if (!layer || featureId == null) return undefined;
   return layer.data.features.find(
     (feature) => String(feature.id) === String(featureId),
   );
+}
+
+function editableLayerFromHit(
+  hit: maplibregl.MapGeoJSONFeature,
+  layers: Layer[],
+  editingLayerId?: string,
+): EditableLayer | undefined {
+  if (hit.properties?.point_count != null) return undefined;
+  const sourceId = hit.source;
+  if (typeof sourceId === "string" && sourceId.startsWith("src-")) {
+    return getEditableLayerById(layers, sourceId.slice("src-".length));
+  }
+  const layerId = hit.layer?.id ?? "";
+  for (const prefix of GEOJSON_LAYER_PREFIXES) {
+    if (layerId.startsWith(prefix)) {
+      return getEditableLayerById(layers, layerId.slice(prefix.length));
+    }
+  }
+  if (
+    layerId.startsWith("td-") ||
+    (typeof sourceId === "string" && sourceId.startsWith("td-"))
+  ) {
+    return getEditableLayerById(layers, editingLayerId);
+  }
+  return undefined;
+}
+
+function pickFeatureInLayer(
+  map: Map,
+  point: { x: number; y: number },
+  layer: EditableLayer,
+  maxPx: number,
+): GeoJSON.Feature | undefined {
+  let best: GeoJSON.Feature | undefined;
+  let bestDistance = maxPx;
+  for (const feature of layer.data.features) {
+    if (feature.id == null) continue;
+    const distance = distanceToFeaturePx(map, point, feature);
+    if (distance <= bestDistance) {
+      bestDistance = distance;
+      best = feature;
+    }
+  }
+  return best;
 }
 
 function findEditableFeatureAtPoint(
@@ -768,25 +823,23 @@ function findEditableFeatureAtPoint(
   layers: Layer[],
   editingLayerId?: string,
 ): { layer: EditableLayer; feature: GeoJSON.Feature } | null {
-  const hits = map.queryRenderedFeatures([point.x, point.y]);
+  const pad = FEATURE_HIT_PX;
+  const hits = map.queryRenderedFeatures([
+    [point.x - pad, point.y - pad],
+    [point.x + pad, point.y + pad],
+  ]);
   for (const hit of hits) {
-    const sourceId = hit.source;
-    if (typeof sourceId === "string" && sourceId.startsWith("src-")) {
-      const layerId = sourceId.slice("src-".length);
-      const layer = getEditableLayerById(layers, layerId);
-      const feature = layer
-        ? featureFromEditableLayer(layer, featureIdFromHit(hit))
-        : undefined;
-      if (layer && feature) return { layer, feature };
-    }
-    const layerId = hit.layer?.id ?? "";
-    if (layerId.startsWith("td-") || (typeof sourceId === "string" && sourceId.startsWith("td-"))) {
-      const editing = getEditableLayerById(layers, editingLayerId);
-      const feature = editing
-        ? featureFromEditableLayer(editing, featureIdFromHit(hit))
-        : undefined;
-      if (editing && feature) return { layer: editing, feature };
-    }
+    const layer = editableLayerFromHit(hit, layers, editingLayerId);
+    if (!layer?.visible) continue;
+    const byId = featureFromEditableLayer(layer, featureIdFromHit(hit));
+    if (byId?.id != null) return { layer, feature: byId };
+    const nearest = pickFeatureInLayer(map, point, layer, 48);
+    if (nearest?.id != null) return { layer, feature: nearest };
+  }
+  for (const layer of layers) {
+    if (!isEditableLayer(layer) || !layer.visible) continue;
+    const nearest = pickFeatureInLayer(map, point, layer, FEATURE_HIT_PX);
+    if (nearest?.id != null) return { layer, feature: nearest };
   }
   return null;
 }
@@ -802,13 +855,9 @@ export function MapViewer(): JSX.Element {
   const suppressDrawSyncRef = useRef(false);
   const terraDrawTargetIdRef = useRef<string | undefined>(undefined);
   const prevDrawTargetRef = useRef<string | undefined | null>(null);
-  const [popup, setPopup] = useState<{
-    coord: [number, number];
-    feature: any;
-  } | null>(null);
   const [featureMenu, setFeatureMenu] = useState<{
     layerId: string;
-    feature: GeoJSON.Feature;
+    featureId: string | number;
     x: number;
     y: number;
   } | null>(null);
@@ -956,42 +1005,27 @@ export function MapViewer(): JSX.Element {
     (window as any).maplibreglMap = map;
     mapRef.current = map;
 
-    const handleFeatureContextMenu = (
-      point: { x: number; y: number },
-      lngLat: { lng: number; lat: number },
-    ) => {
+    const handleFeatureContextMenu = (point: { x: number; y: number }) => {
       const editableHit = findEditableFeatureAtPoint(
         map,
         point,
         layersRef.current,
         editingLayerIdRef.current,
       );
-      if (editableHit && editableHit.feature.id != null) {
-        setPopup(null);
-        setFeatureMenu({
-          layerId: editableHit.layer.id,
-          feature: editableHit.feature,
-          x: point.x,
-          y: point.y,
-        });
-        dispatch({
-          type: "setSelectedFeature",
-          id: editableHit.feature.id,
-        });
+      if (editableHit?.feature.id == null) {
+        setFeatureMenu(null);
         return;
       }
-      setFeatureMenu(null);
-      const features = map
-        .queryRenderedFeatures([point.x, point.y])
-        .filter(
-          (f) =>
-            !!f.properties && !String(f.layer?.id ?? "").startsWith("td-"),
-        );
-      if (features.length > 0) {
-        setPopup({ coord: [lngLat.lng, lngLat.lat], feature: features[0] });
-      } else {
-        setPopup(null);
-      }
+      setFeatureMenu({
+        layerId: editableHit.layer.id,
+        featureId: editableHit.feature.id,
+        x: point.x,
+        y: point.y,
+      });
+      dispatch({
+        type: "setSelectedFeature",
+        id: editableHit.feature.id,
+      });
     };
 
     const blockRightButton = (ev: MouseEvent | PointerEvent) => {
@@ -1006,8 +1040,7 @@ export function MapViewer(): JSX.Element {
       const rect = canvas.getBoundingClientRect();
       const x = ev.clientX - rect.left;
       const y = ev.clientY - rect.top;
-      const lngLat = map.unproject([x, y]);
-      handleFeatureContextMenu({ x, y }, lngLat);
+      handleFeatureContextMenu({ x, y });
     };
     const rightClickGuardOpts: AddEventListenerOptions = { capture: true };
     const removeRightClickGuard = () => {
@@ -1469,6 +1502,10 @@ export function MapViewer(): JSX.Element {
     };
   }, [dispatch, featureMenu]);
 
+  const contextMenuFeature = featureFromEditableLayer(
+    getEditableLayerById(state.layers, featureMenu?.layerId),
+    featureMenu?.featureId,
+  );
 
   return (
     <div className="absolute inset-0 overflow-hidden">
@@ -1619,15 +1656,7 @@ export function MapViewer(): JSX.Element {
       <div className="absolute bottom-3 right-3 z-10">
         <MiniMap styleUrl={styleUrl} />
       </div>
-      {popup && (
-        <FeaturePopup
-          map={mapRef.current!}
-          lngLat={popup.coord}
-          feature={popup.feature}
-          onClose={() => setPopup(null)}
-        />
-      )}
-      {featureMenu && mapContainerRef.current && (
+      {featureMenu && contextMenuFeature && mapContainerRef.current && (
         <FeatureContextMenu
           x={featureMenu.x}
           y={featureMenu.y}
@@ -1638,15 +1667,14 @@ export function MapViewer(): JSX.Element {
           }}
           onZoom={() => {
             const map = mapRef.current;
-            if (map) zoomToFeature(map, featureMenu.feature);
+            if (map) zoomToFeature(map, contextMenuFeature);
             setFeatureMenu(null);
             dispatch({ type: "setSelectedFeature", id: undefined });
           }}
           onDelete={() => {
-            if (featureMenu.feature.id == null) return;
             setPendingDelete({
               layerId: featureMenu.layerId,
-              featureId: featureMenu.feature.id,
+              featureId: featureMenu.featureId,
             });
             setFeatureMenu(null);
           }}
