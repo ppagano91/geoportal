@@ -50,6 +50,7 @@ type Action =
       properties: GeoJSON.GeoJsonProperties;
     }
   | { type: "setDrawMode"; mode: GeoPortalState["drawMode"] }
+  | { type: "setMeasureMode"; mode: GeoPortalState["measureMode"] }
   | { type: "addDrawing"; feature: GeoJSON.Feature }
   | { type: "replaceDrawings"; drawings: GeoJSON.FeatureCollection }
   | { type: "replaceLayerFeatures"; id: string; data: GeoJSON.FeatureCollection }
@@ -70,6 +71,7 @@ const initialState: GeoPortalState = {
   theme: "dark",
   baseMap: "dark",
   drawMode: "none",
+  measureMode: "none",
   drawings: { type: "FeatureCollection", features: [] },
   wmsDialogOpen: false,
   layerSettingsOpen: false,
@@ -231,6 +233,7 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
         activeLayerId: action.id,
         editingLayerId: action.id,
         drawMode: geometryTypeToDrawMode(layer.geometryType),
+        measureMode: "none",
       };
     }
     case "stopEditingLayer":
@@ -302,7 +305,19 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
       ) {
         return state;
       }
-      return { ...state, drawMode: action.mode };
+      return {
+        ...state,
+        drawMode: action.mode,
+        measureMode: action.mode === "none" ? state.measureMode : "none",
+      };
+    }
+    case "setMeasureMode": {
+      if (action.mode === state.measureMode) return state;
+      return {
+        ...state,
+        measureMode: action.mode,
+        drawMode: action.mode === "none" ? state.drawMode : "none",
+      };
     }
     case "addDrawing": {
       const drawings: GeoJSON.FeatureCollection = {
@@ -453,10 +468,16 @@ export type DrawEngine = {
   removeFeatures: (ids: Array<string | number>) => void;
 };
 
+export type MeasureEngine = {
+  setMode: (mode: GeoPortalState["measureMode"]) => void;
+  clear: () => void;
+};
+
 export const GeoPortalContext = React.createContext<{
   state: GeoPortalState;
   dispatch: React.Dispatch<Action>;
   drawEngineRef: React.MutableRefObject<DrawEngine | null>;
+  measureEngineRef: React.MutableRefObject<MeasureEngine | null>;
   mapRef: React.MutableRefObject<MapLibreMap | null>;
 } | null>(null);
 
@@ -488,9 +509,10 @@ export function GeoPortalApp(): JSX.Element {
   }, [state.layers]);
 
   const drawEngineRef = useRef<DrawEngine | null>(null);
+  const measureEngineRef = useRef<MeasureEngine | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const ctx = useMemo(
-    () => ({ state, dispatch, drawEngineRef, mapRef }),
+    () => ({ state, dispatch, drawEngineRef, measureEngineRef, mapRef }),
     [state],
   );
 

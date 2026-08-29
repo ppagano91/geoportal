@@ -78,7 +78,7 @@ const ACTION_ICON = "h-3.5 w-3.5";
 
 export function Sidebar(): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
-  const { state, dispatch } = ctx;
+  const { state, dispatch, measureEngineRef } = ctx;
   const inputRef = useRef<HTMLInputElement>(null);
   const [createEditableOpen, setCreateEditableOpen] = useState(false);
   const [moreMenuLayerId, setMoreMenuLayerId] = useState<string | null>(null);
@@ -294,6 +294,7 @@ export function Sidebar(): JSX.Element {
                         if (l.id === state.editingLayerId) {
                           dispatch({ type: "stopEditingLayer" });
                         } else {
+                          measureEngineRef.current?.setMode("none");
                           dispatch({ type: "startEditingLayer", id: l.id });
                         }
                       }}

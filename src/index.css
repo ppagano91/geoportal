@@ -187,8 +187,9 @@ button.maplibregl-ctrl-custom-buildings-off {
   display: block;
 }
 
-/* El toolbar nativo queda oculto: el visor usa Herramientas de Dibujo */
-.maplibregl-ctrl-top-left .maplibregl-ctrl-group:has(.maplibregl-terradraw-render-button) {
+/* El toolbar nativo queda oculto: el visor usa Herramientas de Dibujo / Medir */
+.maplibregl-ctrl-top-left .maplibregl-ctrl-group:has(.maplibregl-terradraw-render-button),
+.maplibregl-ctrl-top-left .maplibregl-ctrl-group:has(.maplibregl-terradraw-measure-render-button) {
   display: none;
 }
 

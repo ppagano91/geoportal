@@ -1,7 +1,7 @@
 import React, { useContext, useState } from "react";
 import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import { Button } from "../ui/Button";
-import { PencilRuler, Eraser, Save, Trash2 } from "lucide-react";
+import { PencilRuler, Eraser, Save, Trash2, Ruler } from "lucide-react";
 import pointIcon from "../../assets/images/point.svg";
 import lineIcon from "../../assets/images/line.svg";
 import polygonIcon from "../../assets/images/polygon.svg";
@@ -12,12 +12,15 @@ import {
   getEditableLayerById,
   geometryTypeToDrawMode,
 } from "../../persistence/editableLayers";
+import { cn } from "../../utils/cn";
 
 export function MapControls(): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
-  const { state, dispatch, drawEngineRef } = ctx;
+  const { state, dispatch, drawEngineRef, measureEngineRef } = ctx;
   const [openDraw, setOpenDraw] = useState(false);
+  const [openMeasure, setOpenMeasure] = useState(false);
   const editable = getEditableLayerById(state.layers, state.editingLayerId);
+  const measuring = state.measureMode !== "none";
   const allowedMode = editable
     ? geometryTypeToDrawMode(editable.geometryType)
     : undefined;
@@ -25,6 +28,14 @@ export function MapControls(): JSX.Element {
   function canUse(mode: typeof state.drawMode): boolean {
     if (!editable) return true;
     return mode === "select" || mode === allowedMode;
+  }
+
+  function toggleDrawMode(mode: typeof state.drawMode) {
+    const next = state.drawMode === mode ? "none" : mode;
+    if (next !== "none") {
+      measureEngineRef.current?.setMode("none");
+    }
+    dispatch({ type: "setDrawMode", mode: next });
   }
 
   function DrawModeIcon({
@@ -65,12 +76,7 @@ export function MapControls(): JSX.Element {
               size="icon"
               className="h-9 w-9 p-0"
               disabled={!canUse("point")}
-              onClick={() =>
-                dispatch({
-                  type: "setDrawMode",
-                  mode: state.drawMode === "point" ? "none" : "point",
-                })
-              }
+              onClick={() => toggleDrawMode("point")}
             >
               <DrawModeIcon src={pointIcon} alt="Punto" />
             </Button>
@@ -84,12 +90,7 @@ export function MapControls(): JSX.Element {
               size="icon"
               className="h-9 w-9 p-0"
               disabled={!canUse("line")}
-              onClick={() =>
-                dispatch({
-                  type: "setDrawMode",
-                  mode: state.drawMode === "line" ? "none" : "line",
-                })
-              }
+              onClick={() => toggleDrawMode("line")}
             >
               <DrawModeIcon src={lineIcon} alt="Línea" />
             </Button>
@@ -103,12 +104,7 @@ export function MapControls(): JSX.Element {
               size="icon"
               className="h-9 w-9 p-0"
               disabled={!canUse("polygon")}
-              onClick={() =>
-                dispatch({
-                  type: "setDrawMode",
-                  mode: state.drawMode === "polygon" ? "none" : "polygon",
-                })
-              }
+              onClick={() => toggleDrawMode("polygon")}
             >
               <DrawModeIcon src={polygonIcon} alt="Polígono" />
             </Button>
@@ -124,12 +120,7 @@ export function MapControls(): JSX.Element {
               size="icon"
               className="h-9 w-9 p-0"
               disabled={!!editable}
-              onClick={() =>
-                dispatch({
-                  type: "setDrawMode",
-                  mode: state.drawMode === "rectangle" ? "none" : "rectangle",
-                })
-              }
+              onClick={() => toggleDrawMode("rectangle")}
             >
               <DrawModeIcon src={squareIcon} alt="Rectángulo" />
             </Button>
@@ -143,12 +134,7 @@ export function MapControls(): JSX.Element {
               size="icon"
               className="h-9 w-9 p-0"
               disabled={!!editable}
-              onClick={() =>
-                dispatch({
-                  type: "setDrawMode",
-                  mode: state.drawMode === "circle" ? "none" : "circle",
-                })
-              }
+              onClick={() => toggleDrawMode("circle")}
             >
               <DrawModeIcon src={circleIcon} alt="Círculo" />
             </Button>
@@ -157,12 +143,7 @@ export function MapControls(): JSX.Element {
               variant={state.drawMode === "select" ? "default" : "secondary"}
               size="icon"
               className="h-9 w-9 p-0"
-              onClick={() =>
-                dispatch({
-                  type: "setDrawMode",
-                  mode: state.drawMode === "select" ? "none" : "select",
-                })
-              }
+              onClick={() => toggleDrawMode("select")}
             >
               <PencilRuler className="h-4 w-4" />
             </Button>
@@ -204,6 +185,63 @@ export function MapControls(): JSX.Element {
           </>
         )}
       </div>
+      <div className="surface flex w-9 flex-col items-center p-0.5">
+        <button
+          className={cn(
+            "flex h-9 w-9 items-center justify-center text-xs",
+            measuring && "rounded-md bg-primary text-primary-foreground",
+          )}
+          title="Medir"
+          aria-pressed={measuring}
+          onClick={() => setOpenMeasure((v) => !v)}
+        >
+          <Ruler className="h-4 w-4" />
+        </button>
+        {openMeasure && (
+          <>
+            <Button
+              title="Medir distancia"
+              variant={
+                state.measureMode === "distance" ? "default" : "secondary"
+              }
+              size="icon"
+              className="h-9 w-9 p-0"
+              aria-pressed={state.measureMode === "distance"}
+              onClick={() => {
+                const mode =
+                  state.measureMode === "distance" ? "none" : "distance";
+                measureEngineRef.current?.setMode(mode);
+                dispatch({ type: "setMeasureMode", mode });
+              }}
+            >
+              <DrawModeIcon src={lineIcon} alt="Distancia" />
+            </Button>
+            <Button
+              title="Medir área"
+              variant={state.measureMode === "area" ? "default" : "secondary"}
+              size="icon"
+              className="h-9 w-9 p-0"
+              aria-pressed={state.measureMode === "area"}
+              onClick={() => {
+                const mode = state.measureMode === "area" ? "none" : "area";
+                measureEngineRef.current?.setMode(mode);
+                dispatch({ type: "setMeasureMode", mode });
+              }}
+            >
+              <DrawModeIcon src={polygonIcon} alt="Área" />
+            </Button>
+            <Button
+              variant="secondary"
+              size="icon"
+              className="h-9 w-9 p-0"
+              title="Limpiar medición"
+              onClick={() => measureEngineRef.current?.clear()}
+            >
+              <Eraser className="h-4 w-4" />
+            </Button>
+          </>
+        )}
+      </div>
       {openDraw && (
         <div className="surface max-w-[16rem] px-2 py-1.5 text-xs text-muted-foreground">
           {editable ? (
@@ -218,6 +256,11 @@ export function MapControls(): JSX.Element {
           ) : (
             "Activá «Editar capa» para agregar entidades."
           )}
+        </div>
+      )}
+      {measuring && (
+        <div className="surface max-w-[16rem] px-2 py-1.5 text-xs font-medium">
+          {state.measureMode === "distance" ? "📏 Distancia" : "📏 Área"}
         </div>
       )}
     </div>

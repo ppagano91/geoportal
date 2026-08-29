@@ -87,6 +87,9 @@ export type EditableLayer = Layer & {
 
 export type BaseMapStyle = 'streets' | 'satellite' | 'topo' | 'dark'
 
+/** Modo de la herramienta de medición. No se persiste. */
+export type MeasureMode = 'none' | 'distance' | 'area'
+
 export interface GeoPortalState {
 	layers: Layer[]
 	/** Capa seleccionada en el sidebar (propiedades, estilo, acciones). No implica edición. */
@@ -107,6 +110,8 @@ export interface GeoPortalState {
 	theme: 'light' | 'dark'
 	baseMap: BaseMapStyle
 	drawMode: 'none' | 'point' | 'line' | 'polygon' | 'rectangle' | 'circle' | 'select'
+	/** Herramienta de medición temporal. Independiente de dibujo libre y de edición GIS. */
+	measureMode: MeasureMode
 	drawings: GeoJSON.FeatureCollection
 	wmsDialogOpen: boolean
 	compareEnabled?: boolean

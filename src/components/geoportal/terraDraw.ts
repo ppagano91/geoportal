@@ -1,7 +1,10 @@
-import type { Map, StyleSpecification } from "maplibre-gl";
-import type { MaplibreTerradrawControl } from "@watergis/maplibre-gl-terradraw";
+import type { GeoJSONSource, Map, StyleSpecification } from "maplibre-gl";
+import type {
+  MaplibreMeasureControl,
+  MaplibreTerradrawControl,
+} from "@watergis/maplibre-gl-terradraw";
 import type { GeoJSONStoreFeatures } from "terra-draw";
-import type { GeoPortalState } from "../../types/geoportal";
+import type { GeoPortalState, MeasureMode } from "../../types/geoportal";
 
 export const TERRA_DRAW_LAYER_IDS = [
   "td-polygon",
@@ -9,6 +12,25 @@ export const TERRA_DRAW_LAYER_IDS = [
   "td-linestring",
   "td-point",
   "td-point-marker",
+] as const;
+
+export const MEASURE_PREFIX = "td-measure";
+
+export const MEASURE_LAYER_IDS = [
+  `${MEASURE_PREFIX}-polygon`,
+  `${MEASURE_PREFIX}-polygon-outline`,
+  `${MEASURE_PREFIX}-linestring`,
+  `${MEASURE_PREFIX}-point`,
+  `${MEASURE_PREFIX}-point-marker`,
+  `${MEASURE_PREFIX}-line-label`,
+  `${MEASURE_PREFIX}-polygon-label`,
+  `${MEASURE_PREFIX}-line-node`,
+  `${MEASURE_PREFIX}-point-label`,
+] as const;
+
+export const MEASURE_LABEL_SOURCE_IDS = [
+  `${MEASURE_PREFIX}-line-source`,
+  `${MEASURE_PREFIX}-polygon-source`,
 ] as const;
 
 const PERSISTED_MODES = new Set([
@@ -35,6 +57,17 @@ export function toTerraDrawMode(mode: AppDrawMode): string {
       return "circle";
     case "select":
       return "select";
+    default:
+      return "render";
+  }
+}
+
+export function toMeasureTerraMode(mode: MeasureMode): string {
+  switch (mode) {
+    case "distance":
+      return "linestring";
+    case "area":
+      return "polygon";
     default:
       return "render";
   }
@@ -142,6 +175,51 @@ export function moveTerraDrawLayersToTop(map: Map) {
   }
 }
 
+export function moveMeasureLayersToTop(map: Map) {
+  for (const id of MEASURE_LAYER_IDS) {
+    if (map.getLayer(id)) {
+      try {
+        map.moveLayer(id);
+      } catch {
+        /* style may be swapping */
+      }
+    }
+  }
+}
+
+export function restoreMapCursor(map: Map | null | undefined) {
+  if (!map) return;
+  try {
+    map.getCanvas().style.removeProperty("cursor");
+  } catch {
+    /* canvas may be gone */
+  }
+  try {
+    map.getCanvasContainer().style.removeProperty("cursor");
+  } catch {
+    /* container may be gone */
+  }
+}
+
+export function clearMeasureFeatures(
+  control: MaplibreMeasureControl | null | undefined,
+  map: Map | null | undefined,
+) {
+  const instance = control?.getTerraDrawInstance();
+  if (instance?.enabled) {
+    try {
+      instance.clear();
+    } catch {
+      /* already empty */
+    }
+  }
+  if (!map) return;
+  for (const sourceId of MEASURE_LABEL_SOURCE_IDS) {
+    const source = map.getSource(sourceId) as GeoJSONSource | undefined;
+    source?.setData({ type: "FeatureCollection", features: [] });
+  }
+}
+
 export function mergeTerraDrawStyle(
   control: MaplibreTerradrawControl,
   previous: StyleSpecification | undefined,
@@ -150,10 +228,14 @@ export function mergeTerraDrawStyle(
   if (!previous) return next;
   try {
     const td = control.cleanStyle(previous, { onlyTerraDrawLayers: true });
+    const existingLayerIds = new Set(next.layers.map((layer) => layer.id));
+    const extraLayers = (td.layers ?? []).filter(
+      (layer) => !existingLayerIds.has(layer.id),
+    );
     return {
       ...next,
       sources: { ...next.sources, ...td.sources },
-      layers: [...next.layers, ...(td.layers ?? [])],
+      layers: [...next.layers, ...extraLayers],
     };
   } catch (err) {
     console.warn("[draw] failed to preserve draw layers in style", err);
@@ -225,4 +307,61 @@ export function restartTerraDrawIfLayersMissing(
     }
   }
   moveTerraDrawLayersToTop(map);
+}
+
+export function startMeasureControl(control: MaplibreMeasureControl) {
+  try {
+    control.activate();
+  } catch {
+    /* already active */
+  }
+  const instance = control.getTerraDrawInstance();
+  if (instance && !instance.enabled) {
+    try {
+      instance.start();
+    } catch {
+      /* already started */
+    }
+  }
+  return instance;
+}
+
+/**
+ * After setStyle: if measure sources survived transformStyle, keep them.
+ * If they vanished, restart the control and drop temporary measurements
+ * rather than trying to reconstruct label sources by hand.
+ */
+export function restartMeasureIfLayersMissing(
+  map: Map,
+  control: MaplibreMeasureControl,
+) {
+  const instance = control.getTerraDrawInstance();
+  if (!instance) return;
+  if (map.getSource(`${MEASURE_PREFIX}-point`)) {
+    moveMeasureLayersToTop(map);
+    return;
+  }
+  console.log("[measure] measure layers missing after style change; restarting");
+  try {
+    if (instance.enabled) instance.stop();
+  } catch {
+    /* layers already gone with the style */
+  }
+  try {
+    instance.start();
+  } catch (err) {
+    console.warn("[measure] restart failed", err);
+  }
+  try {
+    instance.clear();
+  } catch {
+    /* empty */
+  }
+  try {
+    control.activate();
+  } catch {
+    /* already active */
+  }
+  clearMeasureFeatures(control, map);
+  moveMeasureLayersToTop(map);
 }

@@ -8,9 +8,9 @@
 } from "react";
 import maplibregl, { Map, StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { MaplibreTerradrawControl } from "@watergis/maplibre-gl-terradraw";
+import { MaplibreMeasureControl, MaplibreTerradrawControl } from "@watergis/maplibre-gl-terradraw";
 import "@watergis/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css";
-import { GeoPortalContext, type DrawEngine } from "../../shell/GeoPortalApp";
+import { GeoPortalContext, type DrawEngine, type MeasureEngine } from "../../shell/GeoPortalApp";
 import { BaseMapControl } from "./BaseMapControl";
 import { FeatureContextMenu } from "./FeatureContextMenu";
 import {
@@ -30,13 +30,19 @@ import reliefIcon from "../../assets/images/relief.svg";
 import {
   logDrawLayerIds,
   mergeTerraDrawStyle,
+  moveMeasureLayersToTop,
   moveTerraDrawLayersToTop,
+  restartMeasureIfLayersMissing,
   restartTerraDrawIfLayersMissing,
   restoreFeaturesToTerraDraw,
+  restoreMapCursor,
   snapshotToFeatureCollection,
+  startMeasureControl,
   startTerraDraw,
+  toMeasureTerraMode,
   toTerraDrawMode,
   whenStyleJsonReady,
+  clearMeasureFeatures,
 } from "./terraDraw";
 import { shouldRenderDrawingLayerAsGeoJson } from "../../persistence/drawingLayers";
 import {
@@ -50,9 +56,14 @@ import { distanceToFeaturePx, zoomToFeature } from "../../utils/geo";
 
 // import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
 
+const STYLE_GLYPHS = env.MAPTILER_KEY
+  ? `https://api.maptiler.com/fonts/{fontstack}/{range}.pbf?key=${env.MAPTILER_KEY}`
+  : "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf";
+
 const BASEMAPS = {
   streets: {
     version: 8,
+    glyphs: STYLE_GLYPHS,
     sources: {
       osm: {
         type: "raster",
@@ -69,6 +80,7 @@ const BASEMAPS = {
   } as any,
   satellite: {
     version: 8,
+    glyphs: STYLE_GLYPHS,
     sources: {
       esri: {
         type: "raster",
@@ -83,6 +95,7 @@ const BASEMAPS = {
   } as any,
   topo: {
     version: 8,
+    glyphs: STYLE_GLYPHS,
     sources: {
       opentopo: {
         type: "raster",
@@ -99,6 +112,7 @@ const BASEMAPS = {
   } as any,
   dark: {
     version: 8,
+    glyphs: STYLE_GLYPHS,
     sources: {
       carto: {
         type: "raster",
@@ -979,11 +993,13 @@ function findEditableFeatureAtPoint(
 
 export function MapViewer(): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
-  const { state, dispatch, drawEngineRef, mapRef } = ctx;
+  const { state, dispatch, drawEngineRef, measureEngineRef, mapRef } = ctx;
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const drawControlRef = useRef<MaplibreTerradrawControl | null>(null);
+  const measureControlRef = useRef<MaplibreMeasureControl | null>(null);
   const skipInitialSetStyleRef = useRef(true);
   const drawModeRef = useRef(state.drawMode);
+  const measureModeRef = useRef(state.measureMode);
   const suppressDrawSyncRef = useRef(false);
   const terraDrawTargetIdRef = useRef<string | undefined>(undefined);
   const prevDrawTargetRef = useRef<string | undefined | null>(null);
@@ -1014,6 +1030,7 @@ export function MapViewer(): JSX.Element {
   const drawDocument = getDrawDocument(state);
   const drawDocumentRef = useRef(drawDocument);
   drawModeRef.current = state.drawMode;
+  measureModeRef.current = state.measureMode;
   editingLayerIdRef.current = editingLayerId;
   layersRef.current = state.layers;
   drawDocumentRef.current = drawDocument;
@@ -1120,6 +1137,7 @@ export function MapViewer(): JSX.Element {
       }
     }
     moveTerraDrawLayersToTop(map);
+    moveMeasureLayersToTop(map);
     syncSelectedFeatureHighlight(map, selectedHighlightRef.current);
   };
 
@@ -1223,6 +1241,7 @@ export function MapViewer(): JSX.Element {
       if (!tableLayerId) return;
       const mode = drawModeRef.current;
       if (mode !== "none" && mode !== "select") return;
+      if (measureModeRef.current !== "none") return;
       const hit = findEditableFeatureAtPoint(
         map,
         event.point,
@@ -1395,6 +1414,63 @@ export function MapViewer(): JSX.Element {
     };
     whenStyleJsonReady(map, attachDrawControl);
 
+    const measureControl = new MaplibreMeasureControl({
+      modes: ["render", "linestring", "polygon"],
+      open: false,
+      measureUnitType: "metric",
+      distancePrecision: 2,
+      areaPrecision: 2,
+      computeElevation: false,
+      adapterOptions: { prefixId: "td-measure" },
+    });
+
+    const applyMeasureMode = () => {
+      const instance = measureControl.getTerraDrawInstance();
+      if (!instance) return;
+      if (!instance.enabled) {
+        startMeasureControl(measureControl);
+      }
+      const nextMode = toMeasureTerraMode(measureModeRef.current);
+      const live = measureControl.getTerraDrawInstance();
+      if (live && live.getMode() !== nextMode) {
+        live.setMode(nextMode);
+      }
+      if (nextMode === "render") {
+        restoreMapCursor(map);
+      }
+    };
+
+    const measureEngine: MeasureEngine = {
+      setMode: (mode) => {
+        measureModeRef.current = mode;
+        if (mode !== "none") {
+          // Pause GIS/free-draw interaction without dropping editingLayerId.
+          drawEngine.setMode("none");
+        }
+        applyMeasureMode();
+        if (mode === "none") {
+          drawEngine.setMode(drawModeRef.current);
+        }
+      },
+      clear: () => {
+        clearMeasureFeatures(measureControl, map);
+        applyMeasureMode();
+      },
+    };
+
+    let measureAttached = false;
+    const attachMeasureControl = () => {
+      if (measureAttached) return;
+      measureAttached = true;
+      map.addControl(measureControl, "top-left");
+      measureControlRef.current = measureControl;
+      measureEngineRef.current = measureEngine;
+      startMeasureControl(measureControl);
+      applyMeasureMode();
+      console.log("[measure] control initialized");
+    };
+    whenStyleJsonReady(map, attachMeasureControl);
+
     map.addControl(
       new maplibregl.NavigationControl({ visualizePitch: true }),
       "top-right",
@@ -1460,6 +1536,12 @@ export function MapViewer(): JSX.Element {
           );
         } else {
           attachDrawControl();
+        }
+        if (measureAttached) {
+          restartMeasureIfLayersMissing(map, measureControl);
+          applyMeasureMode();
+        } else {
+          attachMeasureControl();
         }
         console.log("[draw] restoring draw layers");
         syncOperationalLayersRef.current(map);
@@ -1533,6 +1615,13 @@ export function MapViewer(): JSX.Element {
         instance?.off("change", onDrawChange);
         instance?.off("finish", onDrawFinish);
       } catch {}
+      if (measureAttached) {
+        try {
+          map.removeControl(measureControl);
+        } catch {}
+      }
+      measureControlRef.current = null;
+      measureEngineRef.current = null;
       if (drawAttached) {
         try {
           map.removeControl(drawControl);
@@ -1611,23 +1700,39 @@ export function MapViewer(): JSX.Element {
         applyBuildings3DState(map, buildings3DEnabled);
       } catch {}
       moveTerraDrawLayersToTop(map);
+      moveMeasureLayersToTop(map);
       restoreFeaturesToTerraDraw(
         drawControlRef.current?.getTerraDrawInstance(),
         drawDocumentRef.current,
       );
+      const measureControl = measureControlRef.current;
+      if (measureControl) {
+        restartMeasureIfLayersMissing(map, measureControl);
+      }
       logDrawLayerIds(map, "layers after basemap change");
     };
     map.once("style.load", applyAfterStyleReady);
     const drawControl = drawControlRef.current;
+    const measureControl = measureControlRef.current;
     map.setStyle(styleUrl as any, {
-      transformStyle: (previous, next) =>
-        drawControl
-          ? mergeTerraDrawStyle(
-              drawControl,
-              previous as StyleSpecification | undefined,
-              next as StyleSpecification,
-            )
-          : next,
+      transformStyle: (previous, next) => {
+        let style = next as StyleSpecification;
+        if (drawControl) {
+          style = mergeTerraDrawStyle(
+            drawControl,
+            previous as StyleSpecification | undefined,
+            style,
+          );
+        }
+        if (measureControl) {
+          style = mergeTerraDrawStyle(
+            measureControl,
+            previous as StyleSpecification | undefined,
+            style,
+          );
+        }
+        return style;
+      },
     });
 
     return () => {
@@ -1667,6 +1772,10 @@ export function MapViewer(): JSX.Element {
   useEffect(() => {
     drawEngineRef.current?.setMode(state.drawMode);
   }, [drawEngineRef, state.drawMode]);
+
+  useEffect(() => {
+    measureEngineRef.current?.setMode(state.measureMode);
+  }, [measureEngineRef, state.measureMode]);
 
   useEffect(() => {
     const instance = drawControlRef.current?.getTerraDrawInstance();
