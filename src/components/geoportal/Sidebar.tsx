@@ -1,9 +1,9 @@
-import React, { useContext, useMemo, useRef, useState } from "react";
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { ScrollArea } from "../ui/ScrollArea";
-import { ArrowDown, ArrowUp, Check, Eye, EyeOff, Pencil, Plus, Settings2, Trash2, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Eye, EyeOff, MoreVertical, Pencil, Plus, Settings2, Table2, Trash2, Upload } from "lucide-react";
 import type { Layer } from "../../types/geoportal";
 import { computeLayerStats } from "../../utils/stats";
 import { DRAWING_SESSION_LAYER_ID } from "../../persistence/drawingLayers";
@@ -81,6 +81,18 @@ export function Sidebar(): JSX.Element {
   const { state, dispatch } = ctx;
   const inputRef = useRef<HTMLInputElement>(null);
   const [createEditableOpen, setCreateEditableOpen] = useState(false);
+  const [moreMenuLayerId, setMoreMenuLayerId] = useState<string | null>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!moreMenuLayerId) return;
+    function onPointerDown(event: MouseEvent) {
+      if (moreMenuRef.current?.contains(event.target as Node)) return;
+      setMoreMenuLayerId(null);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [moreMenuLayerId]);
 
   const filtered = useMemo(
     () =>
@@ -249,47 +261,74 @@ export function Sidebar(): JSX.Element {
                   </div>
                 )} */}
               </button>
-              <div className="flex items-center gap-0.5">
-                <LayerActionButton
-                  title="Mostrar/Ocultar"
-                  onClick={() =>
-                    dispatch({
-                      type: "toggleLayer",
-                      id: l.id,
-                      visible: !l.visible,
-                    })
-                  }
-                >
-                  {l.visible ? (
-                    <Eye className={ACTION_ICON} />
-                  ) : (
-                    <EyeOff className={ACTION_ICON} />
-                  )}
-                </LayerActionButton>
-                {l.type === "editable" && (
+              <div
+                ref={moreMenuLayerId === l.id ? moreMenuRef : undefined}
+                className="flex flex-col gap-1"
+              >
+                <div className="flex items-center gap-0.5">
                   <LayerActionButton
-                    title={
-                      l.id === state.editingLayerId
-                        ? "Finalizar edición"
-                        : "Editar capa"
+                    title="Mostrar/Ocultar"
+                    onClick={() =>
+                      dispatch({
+                        type: "toggleLayer",
+                        id: l.id,
+                        visible: !l.visible,
+                      })
                     }
-                    active={l.id === state.editingLayerId}
-                    onClick={() => {
-                      if (l.id === state.editingLayerId) {
-                        dispatch({ type: "stopEditingLayer" });
-                      } else {
-                        dispatch({ type: "startEditingLayer", id: l.id });
-                      }
-                    }}
                   >
-                    {l.id === state.editingLayerId ? (
-                      <Check className={ACTION_ICON} />
+                    {l.visible ? (
+                      <Eye className={ACTION_ICON} />
                     ) : (
-                      <Pencil className={ACTION_ICON} />
+                      <EyeOff className={ACTION_ICON} />
                     )}
                   </LayerActionButton>
-                )}
-                <LayerActionButton
+                  {l.type === "editable" && (
+                    <LayerActionButton
+                      title={
+                        l.id === state.editingLayerId
+                          ? "Finalizar edición"
+                          : "Editar capa"
+                      }
+                      active={l.id === state.editingLayerId}
+                      onClick={() => {
+                        if (l.id === state.editingLayerId) {
+                          dispatch({ type: "stopEditingLayer" });
+                        } else {
+                          dispatch({ type: "startEditingLayer", id: l.id });
+                        }
+                      }}
+                    >
+                      {l.id === state.editingLayerId ? (
+                        <Check className={ACTION_ICON} />
+                      ) : (
+                        <Pencil className={ACTION_ICON} />
+                      )}
+                    </LayerActionButton>
+                  )}
+                  <LayerActionButton
+                    title="Propiedades"
+                    onClick={() =>
+                      dispatch({ type: "openLayerSettings", id: l.id })
+                    }
+                  >
+                    <Settings2 className={ACTION_ICON} />
+                  </LayerActionButton>
+                  {l.type === "editable" && (
+                    <LayerActionButton
+                      title="Tabla de atributos"
+                      active={state.attributeTableLayerId === l.id}
+                      onClick={() => {
+                        if (state.attributeTableLayerId === l.id) {
+                          dispatch({ type: "closeAttributeTable" });
+                        } else {
+                          dispatch({ type: "openAttributeTable", id: l.id });
+                        }
+                      }}
+                    >
+                      <Table2 className={ACTION_ICON} />
+                    </LayerActionButton>
+                  )}
+                   <LayerActionButton
                   title="Propiedades"
                   onClick={() =>
                     dispatch({ type: "openLayerSettings", id: l.id })
@@ -321,6 +360,64 @@ export function Sidebar(): JSX.Element {
                 >
                   <Trash2 className={ACTION_ICON} />
                 </LayerActionButton>
+                  
+                  {/* <LayerActionButton
+                    title="Más acciones"
+                    active={moreMenuLayerId === l.id}
+                    onClick={() =>
+                      setMoreMenuLayerId((current) =>
+                        current === l.id ? null : l.id,
+                      )
+                    }
+                  >
+                    <MoreVertical className={ACTION_ICON} />
+                  </LayerActionButton> */}
+                </div>
+                {/* {moreMenuLayerId === l.id && (
+                  <div className="flex flex-col overflow-hidden rounded-md border py-0.5">
+                    <button
+                      type="button"
+                      className="flex items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-muted"
+                      onClick={() => {
+                        dispatch({
+                          type: "moveLayer",
+                          id: l.id,
+                          direction: "up",
+                        });
+                        setMoreMenuLayerId(null);
+                      }}
+                    >
+                      <ArrowUp className={ACTION_ICON} />
+                      Subir
+                    </button>
+                    <button
+                      type="button"
+                      className="flex items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-muted"
+                      onClick={() => {
+                        dispatch({
+                          type: "moveLayer",
+                          id: l.id,
+                          direction: "down",
+                        });
+                        setMoreMenuLayerId(null);
+                      }}
+                    >
+                      <ArrowDown className={ACTION_ICON} />
+                      Bajar
+                    </button>
+                    <button
+                      type="button"
+                      className="flex items-center gap-2 px-2 py-1.5 text-left text-xs text-destructive hover:bg-muted"
+                      onClick={() => {
+                        dispatch({ type: "removeLayer", id: l.id });
+                        setMoreMenuLayerId(null);
+                      }}
+                    >
+                      <Trash2 className={ACTION_ICON} />
+                      Eliminar
+                    </button>
+                  </div>
+                )} */}
               </div>
             </div>
           ))}

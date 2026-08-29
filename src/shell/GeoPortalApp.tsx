@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useReducer, useRef } from "react";
+import type { Map as MapLibreMap } from "maplibre-gl";
 import type { GeoPortalState, Layer } from "../types/geoportal";
 import { Header } from "../components/geoportal/Header";
 import { Sidebar } from "../components/geoportal/Sidebar";
@@ -6,6 +7,7 @@ import { MapViewer } from "../components/geoportal/MapViewer";
 import { WmsDialog } from "../components/geoportal/WmsDialog";
 import { LayerSettingsDialog } from "../components/geoportal/LayerSettingsDialog";
 import { FeatureAttributesDialog } from "../components/geoportal/FeatureAttributesDialog";
+import { AttributeTable } from "../components/geoportal/AttributeTable";
 import {
   DRAWING_SESSION_LAYER_ID,
   createDrawingLayer,
@@ -57,7 +59,9 @@ type Action =
   | { type: "saveDrawingsAsLayer" }
   | { type: "moveLayer"; id: string; direction: "up" | "down" }
   | { type: "openWmsDialog" }
-  | { type: "closeWmsDialog" };
+  | { type: "closeWmsDialog" }
+  | { type: "openAttributeTable"; id: string }
+  | { type: "closeAttributeTable" };
 
 const initialState: GeoPortalState = {
   layers: [],
@@ -184,6 +188,10 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
           state.selectedFeatureLayerId === action.id
             ? false
             : state.featureAttributesOpen,
+        attributeTableLayerId:
+          state.attributeTableLayerId === action.id
+            ? undefined
+            : state.attributeTableLayerId,
         drawMode: leavingEdit ? "none" : state.drawMode,
       };
     }
@@ -425,6 +433,14 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
       return { ...state, wmsDialogOpen: true };
     case "closeWmsDialog":
       return { ...state, wmsDialogOpen: false };
+    case "openAttributeTable": {
+      const layer = getEditableLayerById(state.layers, action.id);
+      if (!layer) return state;
+      return { ...state, attributeTableLayerId: action.id };
+    }
+    case "closeAttributeTable":
+      if (!state.attributeTableLayerId) return state;
+      return { ...state, attributeTableLayerId: undefined };
     default:
       return state;
   }
@@ -441,6 +457,7 @@ export const GeoPortalContext = React.createContext<{
   state: GeoPortalState;
   dispatch: React.Dispatch<Action>;
   drawEngineRef: React.MutableRefObject<DrawEngine | null>;
+  mapRef: React.MutableRefObject<MapLibreMap | null>;
 } | null>(null);
 
 export function GeoPortalApp(): JSX.Element {
@@ -471,8 +488,9 @@ export function GeoPortalApp(): JSX.Element {
   }, [state.layers]);
 
   const drawEngineRef = useRef<DrawEngine | null>(null);
+  const mapRef = useRef<MapLibreMap | null>(null);
   const ctx = useMemo(
-    () => ({ state, dispatch, drawEngineRef }),
+    () => ({ state, dispatch, drawEngineRef, mapRef }),
     [state],
   );
 
@@ -491,31 +509,34 @@ export function GeoPortalApp(): JSX.Element {
         </aside>
         <main className="h-full flex flex-col">
           <Header />
-          <div className="flex-1 relative">
-            <MapViewer />
-            <LayerSettingsDialog />
-            <FeatureAttributesDialog />
-            <WmsDialog
-              open={state.wmsDialogOpen}
-              onOpenChange={(o) =>
-                dispatch({ type: o ? "openWmsDialog" : "closeWmsDialog" })
-              }
-              onAdd={(url, names) => {
-                for (const nm of names) {
-                  const id = crypto.randomUUID();
-                  const layer: Layer = {
-                    id,
-                    name: nm,
-                    type: "wms",
-                    visible: true,
-                    wmsUrl: url,
-                    wmsLayers: nm,
-                  };
-                  dispatch({ type: "addLayer", layer });
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="relative min-h-0 flex-1">
+              <MapViewer />
+              <LayerSettingsDialog />
+              <FeatureAttributesDialog />
+              <WmsDialog
+                open={state.wmsDialogOpen}
+                onOpenChange={(o) =>
+                  dispatch({ type: o ? "openWmsDialog" : "closeWmsDialog" })
                 }
-                dispatch({ type: "closeWmsDialog" });
-              }}
-            />
+                onAdd={(url, names) => {
+                  for (const nm of names) {
+                    const id = crypto.randomUUID();
+                    const layer: Layer = {
+                      id,
+                      name: nm,
+                      type: "wms",
+                      visible: true,
+                      wmsUrl: url,
+                      wmsLayers: nm,
+                    };
+                    dispatch({ type: "addLayer", layer });
+                  }
+                  dispatch({ type: "closeWmsDialog" });
+                }}
+              />
+            </div>
+            <AttributeTable />
           </div>
         </main>
       </div>

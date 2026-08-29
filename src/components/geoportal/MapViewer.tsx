@@ -741,6 +741,139 @@ function removeWms(map: Map, layerId: string) {
   if (map.getSource(sid)) map.removeSource(sid);
 }
 
+const SELECTED_FEATURE_SOURCE_ID = "gp-selected-feature";
+const SELECTED_FEATURE_LAYER_IDS = [
+  "gp-selected-fill",
+  "gp-selected-line-halo",
+  "gp-selected-line",
+  "gp-selected-point-halo",
+  "gp-selected-point",
+] as const;
+
+function ensureSelectedFeatureLayers(map: Map) {
+  if (!map.getSource(SELECTED_FEATURE_SOURCE_ID)) {
+    map.addSource(SELECTED_FEATURE_SOURCE_ID, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+  }
+  if (!map.getLayer("gp-selected-fill")) {
+    map.addLayer({
+      id: "gp-selected-fill",
+      type: "fill",
+      source: SELECTED_FEATURE_SOURCE_ID,
+      filter: [
+        "in",
+        ["geometry-type"],
+        ["literal", ["Polygon", "MultiPolygon"]],
+      ],
+      paint: {
+        "fill-color": "#facc15",
+        "fill-opacity": 0.28,
+      },
+    });
+  }
+  if (!map.getLayer("gp-selected-line-halo")) {
+    map.addLayer({
+      id: "gp-selected-line-halo",
+      type: "line",
+      source: SELECTED_FEATURE_SOURCE_ID,
+      filter: [
+        "in",
+        ["geometry-type"],
+        ["literal", ["LineString", "MultiLineString", "Polygon", "MultiPolygon"]],
+      ],
+      paint: {
+        "line-color": "#ffffff",
+        "line-width": 6,
+        "line-opacity": 0.9,
+      },
+    });
+  }
+  if (!map.getLayer("gp-selected-line")) {
+    map.addLayer({
+      id: "gp-selected-line",
+      type: "line",
+      source: SELECTED_FEATURE_SOURCE_ID,
+      filter: [
+        "in",
+        ["geometry-type"],
+        ["literal", ["LineString", "MultiLineString", "Polygon", "MultiPolygon"]],
+      ],
+      paint: {
+        "line-color": "#facc15",
+        "line-width": 3,
+      },
+    });
+  }
+  if (!map.getLayer("gp-selected-point-halo")) {
+    map.addLayer({
+      id: "gp-selected-point-halo",
+      type: "circle",
+      source: SELECTED_FEATURE_SOURCE_ID,
+      filter: [
+        "in",
+        ["geometry-type"],
+        ["literal", ["Point", "MultiPoint"]],
+      ],
+      paint: {
+        "circle-radius": 11,
+        "circle-color": "#ffffff",
+        "circle-opacity": 0.95,
+      },
+    });
+  }
+  if (!map.getLayer("gp-selected-point")) {
+    map.addLayer({
+      id: "gp-selected-point",
+      type: "circle",
+      source: SELECTED_FEATURE_SOURCE_ID,
+      filter: [
+        "in",
+        ["geometry-type"],
+        ["literal", ["Point", "MultiPoint"]],
+      ],
+      paint: {
+        "circle-radius": 7,
+        "circle-color": "#facc15",
+        "circle-stroke-color": "#854d0e",
+        "circle-stroke-width": 1.5,
+      },
+    });
+  }
+}
+
+function syncSelectedFeatureHighlight(
+  map: Map,
+  feature: GeoJSON.Feature | null,
+) {
+  try {
+    ensureSelectedFeatureLayers(map);
+    const source = map.getSource(SELECTED_FEATURE_SOURCE_ID) as
+      | maplibregl.GeoJSONSource
+      | undefined;
+    source?.setData({
+      type: "FeatureCollection",
+      features:
+        feature?.geometry != null
+          ? [
+              {
+                type: "Feature",
+                id: feature.id,
+                geometry: feature.geometry,
+                properties: {},
+              },
+            ]
+          : [],
+    });
+    for (const id of SELECTED_FEATURE_LAYER_IDS) {
+      if (map.getLayer(id)) map.moveLayer(id);
+    }
+  } catch {
+    // style may not be ready
+  }
+}
+
 function featureIdFromHit(
   hit: maplibregl.MapGeoJSONFeature,
 ): string | number | undefined {
@@ -846,9 +979,8 @@ function findEditableFeatureAtPoint(
 
 export function MapViewer(): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
-  const { state, dispatch, drawEngineRef } = ctx;
+  const { state, dispatch, drawEngineRef, mapRef } = ctx;
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<Map | null>(null);
   const drawControlRef = useRef<MaplibreTerradrawControl | null>(null);
   const skipInitialSetStyleRef = useRef(true);
   const drawModeRef = useRef(state.drawMode);
@@ -857,6 +989,8 @@ export function MapViewer(): JSX.Element {
   const prevDrawTargetRef = useRef<string | undefined | null>(null);
   const knownEditableFeatureIdsRef = useRef<Set<string>>(new Set());
   const featureAttributesOpenRef = useRef(!!state.featureAttributesOpen);
+  const attributeTableLayerIdRef = useRef(state.attributeTableLayerId);
+  const selectedHighlightRef = useRef<GeoJSON.Feature | null>(null);
   const [featureMenu, setFeatureMenu] = useState<{
     layerId: string;
     featureId: string | number;
@@ -884,6 +1018,16 @@ export function MapViewer(): JSX.Element {
   layersRef.current = state.layers;
   drawDocumentRef.current = drawDocument;
   featureAttributesOpenRef.current = !!state.featureAttributesOpen;
+  attributeTableLayerIdRef.current = state.attributeTableLayerId;
+  const selectedLayer = getEditableLayerById(
+    state.layers,
+    state.selectedFeatureLayerId,
+  );
+  selectedHighlightRef.current =
+    selectedLayer?.visible
+      ? featureFromEditableLayer(selectedLayer, state.selectedFeatureId) ??
+        null
+      : null;
 
   // const [features, setFeatures] = useState({});
 
@@ -976,6 +1120,7 @@ export function MapViewer(): JSX.Element {
       }
     }
     moveTerraDrawLayersToTop(map);
+    syncSelectedFeatureHighlight(map, selectedHighlightRef.current);
   };
 
   useEffect(() => {
@@ -1072,6 +1217,28 @@ export function MapViewer(): JSX.Element {
     // en el canvas gana; stopImmediatePropagation evita que Terra Draw reciba
     // el botón derecho.
     installRightClickGuard();
+
+    const onMapClick = (event: maplibregl.MapMouseEvent) => {
+      const tableLayerId = attributeTableLayerIdRef.current;
+      if (!tableLayerId) return;
+      const mode = drawModeRef.current;
+      if (mode !== "none" && mode !== "select") return;
+      const hit = findEditableFeatureAtPoint(
+        map,
+        event.point,
+        layersRef.current,
+        editingLayerIdRef.current,
+      );
+      if (!hit || hit.layer.id !== tableLayerId || hit.feature.id == null) {
+        return;
+      }
+      dispatch({
+        type: "setSelectedFeature",
+        id: hit.feature.id,
+        layerId: hit.layer.id,
+      });
+    };
+    map.on("click", onMapClick);
 
     const drawControl = new MaplibreTerradrawControl({
       modes: [
@@ -1374,6 +1541,7 @@ export function MapViewer(): JSX.Element {
       drawControlRef.current = null;
       drawEngineRef.current = null;
       map.off("style.load", onMapStyleLoad);
+      map.off("click", onMapClick);
       try {
         removeRightClickGuard();
       } catch {}
@@ -1483,6 +1651,18 @@ export function MapViewer(): JSX.Element {
     if (!map) return;
     runWhenStyleReady(map, () => syncOperationalLayersRef.current(map));
   }, [state.layers, runWhenStyleReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    runWhenStyleReady(map, () =>
+      syncSelectedFeatureHighlight(map, selectedHighlightRef.current),
+    );
+  }, [
+    state.selectedFeatureId,
+    state.selectedFeatureLayerId,
+    runWhenStyleReady,
+  ]);
 
   useEffect(() => {
     drawEngineRef.current?.setMode(state.drawMode);

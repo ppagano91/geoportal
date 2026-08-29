@@ -99,6 +99,8 @@ export interface GeoPortalState {
 	selectedFeatureLayerId?: string
 	/** Modal de atributos de una entidad. */
 	featureAttributesOpen?: boolean
+	/** Capa cuya tabla de atributos está abierta. Solo una a la vez. */
+	attributeTableLayerId?: string
 	layerSettingsOpen?: boolean
 	searchQuery: string
 	sidebarOpen: boolean
