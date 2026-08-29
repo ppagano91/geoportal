@@ -46,12 +46,12 @@ export function isEditableLayer(layer: Layer): layer is EditableLayer {
 	return layer.type === "editable";
 }
 
-export function getActiveEditableLayer(
+export function getEditableLayerById(
 	layers: Layer[],
-	activeLayerId?: string,
+	id?: string,
 ): EditableLayer | undefined {
-	if (!activeLayerId) return undefined;
-	const layer = layers.find((item) => item.id === activeLayerId);
+	if (!id) return undefined;
+	const layer = layers.find((item) => item.id === id);
 	return layer && isEditableLayer(layer) ? layer : undefined;
 }
 
@@ -77,9 +77,9 @@ export function isDrawModeAllowedForEditable(
 }
 
 export function getDrawDocument(
-	state: Pick<GeoPortalState, "layers" | "activeLayerId" | "drawings">,
+	state: Pick<GeoPortalState, "layers" | "editingLayerId" | "drawings">,
 ): GeoJSON.FeatureCollection {
-	const editable = getActiveEditableLayer(state.layers, state.activeLayerId);
+	const editable = getEditableLayerById(state.layers, state.editingLayerId);
 	if (editable?.data) return editable.data;
 	return state.drawings;
 }

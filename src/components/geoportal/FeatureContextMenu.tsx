@@ -1,0 +1,98 @@
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+
+export function FeatureContextMenu({
+  x,
+  y,
+  container,
+  editAttributesDisabled = true,
+  onClose,
+  onEditAttributes,
+  onZoom,
+  onDelete,
+}: {
+  x: number;
+  y: number;
+  container: HTMLElement;
+  editAttributesDisabled?: boolean;
+  onClose: () => void;
+  onEditAttributes?: () => void;
+  onZoom: () => void;
+  onDelete: () => void;
+}): JSX.Element {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: x, top: y });
+
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const mw = el.offsetWidth;
+    const mh = el.offsetHeight;
+    const pw = container.clientWidth;
+    const ph = container.clientHeight;
+    let left = x;
+    let top = y;
+    if (left + mw > pw - 8) left = Math.max(8, pw - mw - 8);
+    if (top + mh > ph - 8) top = Math.max(8, ph - mh - 8);
+    left = Math.max(8, left);
+    top = Math.max(8, top);
+    setPos({ left, top });
+  }, [x, y, container]);
+
+  useEffect(() => {
+    function onPointerDown(event: MouseEvent) {
+      if (menuRef.current?.contains(event.target as Node)) return;
+      onClose();
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={menuRef}
+      role="menu"
+      className="surface absolute z-[1100] min-w-[11.5rem] overflow-hidden rounded-md border py-1 text-sm shadow-md"
+      style={{ left: pos.left, top: pos.top }}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <button
+        type="button"
+        role="menuitem"
+        disabled={editAttributesDisabled}
+        title={
+          editAttributesDisabled
+            ? "Disponible en la próxima etapa"
+            : "Editar atributos"
+        }
+        className="flex w-full px-3 py-1.5 text-left hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+        onClick={onEditAttributes}
+      >
+        Editar atributos
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className="flex w-full px-3 py-1.5 text-left hover:bg-muted"
+        onClick={onZoom}
+      >
+        Zoom a entidad
+      </button>
+      <div className="my-1 border-t" />
+      <button
+        type="button"
+        role="menuitem"
+        className="flex w-full px-3 py-1.5 text-left text-destructive hover:bg-muted"
+        onClick={onDelete}
+      >
+        Eliminar
+      </button>
+    </div>
+  );
+}

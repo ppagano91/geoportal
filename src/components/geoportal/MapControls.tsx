@@ -9,7 +9,7 @@ import squareIcon from "../../assets/images/square.svg";
 import circleIcon from "../../assets/images/circle.svg";
 import {
   geometryTypeLabel,
-  getActiveEditableLayer,
+  getEditableLayerById,
   geometryTypeToDrawMode,
 } from "../../persistence/editableLayers";
 
@@ -17,7 +17,7 @@ export function MapControls(): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
   const { state, dispatch, drawEngineRef } = ctx;
   const [openDraw, setOpenDraw] = useState(false);
-  const editable = getActiveEditableLayer(state.layers, state.activeLayerId);
+  const editable = getEditableLayerById(state.layers, state.editingLayerId);
   const allowedMode = editable
     ? geometryTypeToDrawMode(editable.geometryType)
     : undefined;
@@ -216,7 +216,7 @@ export function MapControls(): JSX.Element {
               {geometryTypeLabel(editable.geometryType)}
             </span>
           ) : (
-            "Seleccioná una capa editable para agregar entidades."
+            "Activá «Editar capa» para agregar entidades."
           )}
         </div>
       )}

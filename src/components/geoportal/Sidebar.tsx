@@ -3,7 +3,7 @@ import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { ScrollArea } from "../ui/ScrollArea";
-import { ArrowDown, ArrowUp, Eye, EyeOff, Plus, Settings2, Trash2, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Eye, EyeOff, Pencil, Plus, Settings2, Trash2, Upload } from "lucide-react";
 import type { Layer } from "../../types/geoportal";
 import { computeLayerStats } from "../../utils/stats";
 import { DRAWING_SESSION_LAYER_ID } from "../../persistence/drawingLayers";
@@ -181,7 +181,11 @@ export function Sidebar(): JSX.Element {
             <div
               key={l.id}
               className={`surface p-2 flex items-center gap-2 ${
-                l.id === state.activeLayerId ? "ring-1 ring-ring" : ""
+                l.id === state.editingLayerId
+                  ? "ring-1 ring-primary"
+                  : l.id === state.activeLayerId
+                    ? "ring-1 ring-ring"
+                    : ""
               }`}
             >
               <button
@@ -209,20 +213,45 @@ export function Sidebar(): JSX.Element {
                     id: state.activeLayerId === l.id ? undefined : l.id,
                   })
                 }
-                title={
-                  l.type === "editable"
-                    ? state.activeLayerId === l.id
-                      ? "Clic para dejar de dibujar en esta capa"
-                      : "Seleccionar para dibujar en esta capa"
-                    : l.name
-                }
+                title={l.name}
               >
                 <div className="font-medium">{l.name}</div>
                 <div className="text-xs text-muted-foreground">
                   {layerListSubtitle(l)}
                 </div>
+                {l.id === state.editingLayerId && (
+                  <div className="text-[10px] font-medium uppercase tracking-wide text-primary">
+                    En edición
+                  </div>
+                )}
               </button>
               <div className="flex items-center gap-1">
+                {l.type === "editable" && (
+                  <Button
+                    variant={
+                      l.id === state.editingLayerId ? "default" : "outline"
+                    }
+                    size="icon"
+                    title={
+                      l.id === state.editingLayerId
+                        ? "Finalizar edición"
+                        : "Editar capa"
+                    }
+                    onClick={() => {
+                      if (l.id === state.editingLayerId) {
+                        dispatch({ type: "stopEditingLayer" });
+                      } else {
+                        dispatch({ type: "startEditingLayer", id: l.id });
+                      }
+                    }}
+                  >
+                    {l.id === state.editingLayerId ? (
+                      <Check className="h-4 w-4" />
+                    ) : (
+                      <Pencil className="h-4 w-4" />
+                    )}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="icon"

@@ -13,7 +13,16 @@ import "@watergis/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css";
 import { GeoPortalContext, type DrawEngine } from "../../shell/GeoPortalApp";
 import { BaseMapControl } from "./BaseMapControl";
 import { FeaturePopup } from "./FeaturePopup";
-import type { Layer } from "../../types/geoportal";
+import { FeatureContextMenu } from "./FeatureContextMenu";
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/Dialog";
+import { Button } from "../ui/Button";
+import type { EditableLayer, Layer } from "../../types/geoportal";
 import { MiniMap } from "./MiniMap";
 import { MapControls } from "./MapControls";
 import { env } from "../../config/env";
@@ -32,9 +41,10 @@ import {
 } from "./terraDraw";
 import { shouldRenderDrawingLayerAsGeoJson } from "../../persistence/drawingLayers";
 import {
-  getActiveEditableLayer,
   getDrawDocument,
+  getEditableLayerById,
 } from "../../persistence/editableLayers";
+import { zoomToFeature } from "../../utils/geo";
 
 // import MapboxDraw from "@mapbox/mapbox-gl-draw";
 
@@ -731,6 +741,56 @@ function removeWms(map: Map, layerId: string) {
   if (map.getSource(sid)) map.removeSource(sid);
 }
 
+function featureIdFromHit(
+  hit: maplibregl.MapGeoJSONFeature,
+): string | number | undefined {
+  if (typeof hit.id === "string" || typeof hit.id === "number") return hit.id;
+  const fromProps = hit.properties?.id;
+  if (typeof fromProps === "string" || typeof fromProps === "number") {
+    return fromProps;
+  }
+  return undefined;
+}
+
+function featureFromEditableLayer(
+  layer: EditableLayer,
+  featureId: string | number | undefined,
+): GeoJSON.Feature | undefined {
+  if (featureId == null) return undefined;
+  return layer.data.features.find(
+    (feature) => String(feature.id) === String(featureId),
+  );
+}
+
+function findEditableFeatureAtPoint(
+  map: Map,
+  point: { x: number; y: number },
+  layers: Layer[],
+  editingLayerId?: string,
+): { layer: EditableLayer; feature: GeoJSON.Feature } | null {
+  const hits = map.queryRenderedFeatures([point.x, point.y]);
+  for (const hit of hits) {
+    const sourceId = hit.source;
+    if (typeof sourceId === "string" && sourceId.startsWith("src-")) {
+      const layerId = sourceId.slice("src-".length);
+      const layer = getEditableLayerById(layers, layerId);
+      const feature = layer
+        ? featureFromEditableLayer(layer, featureIdFromHit(hit))
+        : undefined;
+      if (layer && feature) return { layer, feature };
+    }
+    const layerId = hit.layer?.id ?? "";
+    if (layerId.startsWith("td-") || (typeof sourceId === "string" && sourceId.startsWith("td-"))) {
+      const editing = getEditableLayerById(layers, editingLayerId);
+      const feature = editing
+        ? featureFromEditableLayer(editing, featureIdFromHit(hit))
+        : undefined;
+      if (editing && feature) return { layer: editing, feature };
+    }
+  }
+  return null;
+}
+
 export function MapViewer(): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
   const { state, dispatch, drawEngineRef } = ctx;
@@ -746,19 +806,31 @@ export function MapViewer(): JSX.Element {
     coord: [number, number];
     feature: any;
   } | null>(null);
+  const [featureMenu, setFeatureMenu] = useState<{
+    layerId: string;
+    feature: GeoJSON.Feature;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{
+    layerId: string;
+    featureId: string | number;
+  } | null>(null);
   const [terrainOn, setTerrainOn] = useState(false);
   const [buildings3DEnabled, setBuildings3DEnabled] = useState(false);
   const syncOperationalLayersRef = useRef<(map: Map) => void>(() => {});
-  const editingLayer = getActiveEditableLayer(
+  const editingLayer = getEditableLayerById(
     state.layers,
-    state.activeLayerId,
+    state.editingLayerId,
   );
   const editingLayerId = editingLayer?.id;
   const editingLayerIdRef = useRef(editingLayerId);
+  const layersRef = useRef(state.layers);
   const drawDocument = getDrawDocument(state);
   const drawDocumentRef = useRef(drawDocument);
   drawModeRef.current = state.drawMode;
   editingLayerIdRef.current = editingLayerId;
+  layersRef.current = state.layers;
   drawDocumentRef.current = drawDocument;
 
   // const [features, setFeatures] = useState({});
@@ -958,6 +1030,12 @@ export function MapViewer(): JSX.Element {
         instance.removeFeatures(ids);
         syncDrawingsFromStore(true);
       },
+      removeFeatures: (ids) => {
+        const instance = drawControl.getTerraDrawInstance();
+        if (!instance?.enabled || ids.length === 0) return;
+        instance.removeFeatures(ids);
+        syncDrawingsFromStore(true);
+      },
     };
 
     const onDrawChange = () => {
@@ -1051,10 +1129,32 @@ export function MapViewer(): JSX.Element {
     function onContext(e: MapMouseEvent) {
       try {
         (e.originalEvent as MouseEvent).preventDefault();
+        (e.originalEvent as MouseEvent).stopPropagation();
       } catch {}
+      const editableHit = findEditableFeatureAtPoint(
+        map,
+        e.point,
+        layersRef.current,
+        editingLayerIdRef.current,
+      );
+      if (editableHit && editableHit.feature.id != null) {
+        setPopup(null);
+        setFeatureMenu({
+          layerId: editableHit.layer.id,
+          feature: editableHit.feature,
+          x: e.point.x,
+          y: e.point.y,
+        });
+        dispatch({
+          type: "setSelectedFeature",
+          id: editableHit.feature.id,
+        });
+        return;
+      }
+      setFeatureMenu(null);
       const features = map
         .queryRenderedFeatures(e.point)
-        .filter((f) => !!f.properties);
+        .filter((f) => !!f.properties && !String(f.layer?.id ?? "").startsWith("td-"));
       if (features.length > 0) {
         setPopup({ coord: [e.lngLat.lng, e.lngLat.lat], feature: features[0] });
       } else {
@@ -1065,7 +1165,12 @@ export function MapViewer(): JSX.Element {
     const preventCtx = (ev: Event) => {
       ev.preventDefault();
     };
+    const blockRightClickFromDraw = (ev: MouseEvent | PointerEvent) => {
+      if (ev.button === 2) ev.stopImmediatePropagation();
+    };
     map.getCanvas().addEventListener("contextmenu", preventCtx);
+    map.getCanvas().addEventListener("pointerdown", blockRightClickFromDraw, true);
+    map.getCanvas().addEventListener("mousedown", blockRightClickFromDraw, true);
 
     const onMapStyleLoad = () => {
       console.log("[draw] style reloaded");
@@ -1160,14 +1265,20 @@ export function MapViewer(): JSX.Element {
       drawEngineRef.current = null;
       map.off("contextmenu", onContext);
       map.off("style.load", onMapStyleLoad);
+      try {
+        map.getCanvas().removeEventListener("contextmenu", preventCtx);
+        map
+          .getCanvas()
+          .removeEventListener("pointerdown", blockRightClickFromDraw, true);
+        map
+          .getCanvas()
+          .removeEventListener("mousedown", blockRightClickFromDraw, true);
+      } catch {}
       map.remove();
       try {
         ro.disconnect();
       } catch {}
       window.removeEventListener("resize", onWinResize);
-      try {
-        map.getCanvas().removeEventListener("contextmenu", preventCtx);
-      } catch {}
       mapRef.current = null;
       (window as any).maplibreglMap = null;
     };
@@ -1278,6 +1389,17 @@ export function MapViewer(): JSX.Element {
     const instance = drawControlRef.current?.getTerraDrawInstance();
     if (!instance?.enabled) return;
     if (prevDrawTargetRef.current === editingLayerId) return;
+
+    if (!suppressDrawSyncRef.current) {
+      const drawings = snapshotToFeatureCollection(instance.getSnapshot());
+      const targetId = terraDrawTargetIdRef.current;
+      if (targetId) {
+        dispatch({ type: "replaceLayerFeatures", id: targetId, data: drawings });
+      } else {
+        dispatch({ type: "replaceDrawings", drawings });
+      }
+    }
+
     prevDrawTargetRef.current = editingLayerId;
     suppressDrawSyncRef.current = true;
     try {
@@ -1305,6 +1427,19 @@ export function MapViewer(): JSX.Element {
     }
     restoreFeaturesToTerraDraw(instance, state.drawings);
   }, [state.drawings, editingLayerId]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !featureMenu) return;
+    const closeMenu = () => {
+      setFeatureMenu(null);
+      dispatch({ type: "setSelectedFeature", id: undefined });
+    };
+    map.on("movestart", closeMenu);
+    return () => {
+      map.off("movestart", closeMenu);
+    };
+  }, [dispatch, featureMenu]);
 
 
   return (
@@ -1464,6 +1599,76 @@ export function MapViewer(): JSX.Element {
           onClose={() => setPopup(null)}
         />
       )}
+      {featureMenu && mapContainerRef.current && (
+        <FeatureContextMenu
+          x={featureMenu.x}
+          y={featureMenu.y}
+          container={mapContainerRef.current}
+          onClose={() => {
+            setFeatureMenu(null);
+            dispatch({ type: "setSelectedFeature", id: undefined });
+          }}
+          onZoom={() => {
+            const map = mapRef.current;
+            if (map) zoomToFeature(map, featureMenu.feature);
+            setFeatureMenu(null);
+            dispatch({ type: "setSelectedFeature", id: undefined });
+          }}
+          onDelete={() => {
+            if (featureMenu.feature.id == null) return;
+            setPendingDelete({
+              layerId: featureMenu.layerId,
+              featureId: featureMenu.feature.id,
+            });
+            setFeatureMenu(null);
+          }}
+        />
+      )}
+      <Dialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingDelete(null);
+            dispatch({ type: "setSelectedFeature", id: undefined });
+          }
+        }}
+        className="w-full max-w-sm p-4"
+      >
+        <DialogHeader>
+          <DialogTitle>Eliminar entidad</DialogTitle>
+          <DialogDescription>¿Eliminar esta entidad?</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setPendingDelete(null);
+              dispatch({ type: "setSelectedFeature", id: undefined });
+            }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              if (!pendingDelete) return;
+              if (state.editingLayerId === pendingDelete.layerId) {
+                drawEngineRef.current?.removeFeatures([pendingDelete.featureId]);
+              } else {
+                dispatch({
+                  type: "removeLayerFeature",
+                  layerId: pendingDelete.layerId,
+                  featureId: pendingDelete.featureId,
+                });
+              }
+              setPendingDelete(null);
+              dispatch({ type: "setSelectedFeature", id: undefined });
+            }}
+          >
+            Eliminar
+          </Button>
+        </DialogFooter>
+      </Dialog>
     </div>
   );
 }
