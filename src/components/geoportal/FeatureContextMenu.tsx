@@ -40,6 +40,7 @@ export function FeatureContextMenu({
 
   useEffect(() => {
     function onPointerDown(event: MouseEvent) {
+      if (event.button === 2) return;
       if (menuRef.current?.contains(event.target as Node)) return;
       onClose();
     }

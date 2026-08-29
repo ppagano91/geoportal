@@ -6,7 +6,7 @@
   useState,
   useCallback,
 } from "react";
-import maplibregl, { Map, MapMouseEvent, StyleSpecification } from "maplibre-gl";
+import maplibregl, { Map, StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MaplibreTerradrawControl } from "@watergis/maplibre-gl-terradraw";
 import "@watergis/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css";
@@ -956,6 +956,86 @@ export function MapViewer(): JSX.Element {
     (window as any).maplibreglMap = map;
     mapRef.current = map;
 
+    const handleFeatureContextMenu = (
+      point: { x: number; y: number },
+      lngLat: { lng: number; lat: number },
+    ) => {
+      const editableHit = findEditableFeatureAtPoint(
+        map,
+        point,
+        layersRef.current,
+        editingLayerIdRef.current,
+      );
+      if (editableHit && editableHit.feature.id != null) {
+        setPopup(null);
+        setFeatureMenu({
+          layerId: editableHit.layer.id,
+          feature: editableHit.feature,
+          x: point.x,
+          y: point.y,
+        });
+        dispatch({
+          type: "setSelectedFeature",
+          id: editableHit.feature.id,
+        });
+        return;
+      }
+      setFeatureMenu(null);
+      const features = map
+        .queryRenderedFeatures([point.x, point.y])
+        .filter(
+          (f) =>
+            !!f.properties && !String(f.layer?.id ?? "").startsWith("td-"),
+        );
+      if (features.length > 0) {
+        setPopup({ coord: [lngLat.lng, lngLat.lat], feature: features[0] });
+      } else {
+        setPopup(null);
+      }
+    };
+
+    const blockRightButton = (ev: MouseEvent | PointerEvent) => {
+      if (ev.button === 2) {
+        ev.stopImmediatePropagation();
+      }
+    };
+    const onNativeContextMenu = (ev: MouseEvent) => {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      const canvas = map.getCanvas();
+      const rect = canvas.getBoundingClientRect();
+      const x = ev.clientX - rect.left;
+      const y = ev.clientY - rect.top;
+      const lngLat = map.unproject([x, y]);
+      handleFeatureContextMenu({ x, y }, lngLat);
+    };
+    const rightClickGuardOpts: AddEventListenerOptions = { capture: true };
+    const removeRightClickGuard = () => {
+      const canvas = map.getCanvas();
+      canvas.removeEventListener("pointerdown", blockRightButton, rightClickGuardOpts);
+      canvas.removeEventListener("pointerup", blockRightButton, rightClickGuardOpts);
+      canvas.removeEventListener("mousedown", blockRightButton, rightClickGuardOpts);
+      canvas.removeEventListener("mouseup", blockRightButton, rightClickGuardOpts);
+      canvas.removeEventListener("auxclick", blockRightButton, rightClickGuardOpts);
+      canvas.removeEventListener("contextmenu", onNativeContextMenu, rightClickGuardOpts);
+    };
+    const installRightClickGuard = () => {
+      removeRightClickGuard();
+      const canvas = map.getCanvas();
+      canvas.addEventListener("pointerdown", blockRightButton, rightClickGuardOpts);
+      canvas.addEventListener("pointerup", blockRightButton, rightClickGuardOpts);
+      canvas.addEventListener("mousedown", blockRightButton, rightClickGuardOpts);
+      canvas.addEventListener("mouseup", blockRightButton, rightClickGuardOpts);
+      canvas.addEventListener("auxclick", blockRightButton, rightClickGuardOpts);
+      canvas.addEventListener("contextmenu", onNativeContextMenu, rightClickGuardOpts);
+    };
+    // Registrar en captura ANTES de Terra Draw. Los modos usan
+    // pointerEvents.rightClick: true (SelectMode.onRightClick borra vértices;
+    // PointMode.onRightClick borra la feature). El primer listener de captura
+    // en el canvas gana; stopImmediatePropagation evita que Terra Draw reciba
+    // el botón derecho.
+    installRightClickGuard();
+
     const drawControl = new MaplibreTerradrawControl({
       modes: [
         "render",
@@ -1126,54 +1206,9 @@ export function MapViewer(): JSX.Element {
 
     // no fallback de estilo en error
 
-    function onContext(e: MapMouseEvent) {
-      try {
-        (e.originalEvent as MouseEvent).preventDefault();
-        (e.originalEvent as MouseEvent).stopPropagation();
-      } catch {}
-      const editableHit = findEditableFeatureAtPoint(
-        map,
-        e.point,
-        layersRef.current,
-        editingLayerIdRef.current,
-      );
-      if (editableHit && editableHit.feature.id != null) {
-        setPopup(null);
-        setFeatureMenu({
-          layerId: editableHit.layer.id,
-          feature: editableHit.feature,
-          x: e.point.x,
-          y: e.point.y,
-        });
-        dispatch({
-          type: "setSelectedFeature",
-          id: editableHit.feature.id,
-        });
-        return;
-      }
-      setFeatureMenu(null);
-      const features = map
-        .queryRenderedFeatures(e.point)
-        .filter((f) => !!f.properties && !String(f.layer?.id ?? "").startsWith("td-"));
-      if (features.length > 0) {
-        setPopup({ coord: [e.lngLat.lng, e.lngLat.lat], feature: features[0] });
-      } else {
-        setPopup(null);
-      }
-    }
-    map.on("contextmenu", onContext);
-    const preventCtx = (ev: Event) => {
-      ev.preventDefault();
-    };
-    const blockRightClickFromDraw = (ev: MouseEvent | PointerEvent) => {
-      if (ev.button === 2) ev.stopImmediatePropagation();
-    };
-    map.getCanvas().addEventListener("contextmenu", preventCtx);
-    map.getCanvas().addEventListener("pointerdown", blockRightClickFromDraw, true);
-    map.getCanvas().addEventListener("mousedown", blockRightClickFromDraw, true);
-
     const onMapStyleLoad = () => {
       console.log("[draw] style reloaded");
+      installRightClickGuard();
       whenStyleJsonReady(map, () => {
         if (drawAttached) {
           restartTerraDrawIfLayersMissing(map, drawControl);
@@ -1263,16 +1298,9 @@ export function MapViewer(): JSX.Element {
       }
       drawControlRef.current = null;
       drawEngineRef.current = null;
-      map.off("contextmenu", onContext);
       map.off("style.load", onMapStyleLoad);
       try {
-        map.getCanvas().removeEventListener("contextmenu", preventCtx);
-        map
-          .getCanvas()
-          .removeEventListener("pointerdown", blockRightClickFromDraw, true);
-        map
-          .getCanvas()
-          .removeEventListener("mousedown", blockRightClickFromDraw, true);
+        removeRightClickGuard();
       } catch {}
       map.remove();
       try {

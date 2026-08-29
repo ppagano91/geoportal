@@ -9,6 +9,7 @@ import { computeLayerStats } from "../../utils/stats";
 import { DRAWING_SESSION_LAYER_ID } from "../../persistence/drawingLayers";
 import { geometryTypeLabel } from "../../persistence/editableLayers";
 import { CreateEditableLayerDialog } from "./CreateEditableLayerDialog";
+import { cn } from "../../utils/cn";
 
 function inferGeometryType(
   fc: GeoJSON.FeatureCollection
@@ -36,10 +37,44 @@ function layerListSubtitle(layer: Layer): string {
     return `Dibujo · ${geometryTypeLabel(layer.geometryType)}`;
   }
   if (layer.type === "editable") {
-    return `Editable · ${geometryTypeLabel(layer.geometryType)}`;
+    const count = layer.data?.features.length ?? 0;
+    return `Editable · ${geometryTypeLabel(layer.geometryType)} · ${count} ${
+      count === 1 ? "entidad" : "entidades"
+    }`;
   }
   return geometryTypeLabel(layer.geometryType);
 }
+
+function LayerActionButton({
+  title,
+  onClick,
+  children,
+  active,
+  destructive,
+}: {
+  title: string;
+  onClick: () => void;
+  children: React.ReactNode;
+  active?: boolean;
+  destructive?: boolean;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={cn(
+        "control h-7 w-7 shrink-0 p-0",
+        active ? "border-primary bg-primary text-primary-foreground" : null,
+        destructive && !active ? "text-destructive" : null,
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+const ACTION_ICON = "h-3.5 w-3.5";
 
 export function Sidebar(): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
@@ -180,7 +215,7 @@ export function Sidebar(): JSX.Element {
           {filtered.map((l) => (
             <div
               key={l.id}
-              className={`surface p-2 flex items-center gap-2 ${
+              className={`surface flex flex-col gap-1.5 p-2 ${
                 l.id === state.editingLayerId
                   ? "ring-1 ring-primary"
                   : l.id === state.activeLayerId
@@ -189,24 +224,7 @@ export function Sidebar(): JSX.Element {
               }`}
             >
               <button
-                className="control h-8 w-8"
-                title={l.visible ? "Ocultar capa" : "Mostrar capa"}
-                onClick={() =>
-                  dispatch({
-                    type: "toggleLayer",
-                    id: l.id,
-                    visible: !l.visible,
-                  })
-                }
-              >
-                {l.visible ? (
-                  <Eye className="h-4 w-4" />
-                ) : (
-                  <EyeOff className="h-4 w-4" />
-                )}
-              </button>
-              <button
-                className="flex-1 text-left truncate"
+                className="min-w-0 w-full text-left"
                 onClick={() =>
                   dispatch({
                     type: "setActiveLayer",
@@ -215,28 +233,47 @@ export function Sidebar(): JSX.Element {
                 }
                 title={l.name}
               >
-                <div className="font-medium">{l.name}</div>
-                <div className="text-xs text-muted-foreground">
+                <div className="truncate font-medium">{l.name}
+                {l.id === state.editingLayerId && (
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-primary ml-2">
+                    En edición
+                  </span>
+                )}
+                  </div>                
+                <div className="truncate text-xs text-muted-foreground">
                   {layerListSubtitle(l)}
                 </div>
-                {l.id === state.editingLayerId && (
+                {/* {l.id === state.editingLayerId && (
                   <div className="text-[10px] font-medium uppercase tracking-wide text-primary">
                     En edición
                   </div>
-                )}
+                )} */}
               </button>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0.5">
+                <LayerActionButton
+                  title="Mostrar/Ocultar"
+                  onClick={() =>
+                    dispatch({
+                      type: "toggleLayer",
+                      id: l.id,
+                      visible: !l.visible,
+                    })
+                  }
+                >
+                  {l.visible ? (
+                    <Eye className={ACTION_ICON} />
+                  ) : (
+                    <EyeOff className={ACTION_ICON} />
+                  )}
+                </LayerActionButton>
                 {l.type === "editable" && (
-                  <Button
-                    variant={
-                      l.id === state.editingLayerId ? "default" : "outline"
-                    }
-                    size="icon"
+                  <LayerActionButton
                     title={
                       l.id === state.editingLayerId
                         ? "Finalizar edición"
                         : "Editar capa"
                     }
+                    active={l.id === state.editingLayerId}
                     onClick={() => {
                       if (l.id === state.editingLayerId) {
                         dispatch({ type: "stopEditingLayer" });
@@ -246,51 +283,45 @@ export function Sidebar(): JSX.Element {
                     }}
                   >
                     {l.id === state.editingLayerId ? (
-                      <Check className="h-4 w-4" />
+                      <Check className={ACTION_ICON} />
                     ) : (
-                      <Pencil className="h-4 w-4" />
+                      <Pencil className={ACTION_ICON} />
                     )}
-                  </Button>
+                  </LayerActionButton>
                 )}
-                <Button
-                  variant="outline"
-                  size="icon"
+                <LayerActionButton
                   title="Propiedades"
                   onClick={() =>
                     dispatch({ type: "openLayerSettings", id: l.id })
                   }
                 >
-                  <Settings2 className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
+                  <Settings2 className={ACTION_ICON} />
+                </LayerActionButton>
+                <LayerActionButton
                   title="Subir"
                   onClick={() =>
                     dispatch({ type: "moveLayer", id: l.id, direction: "up" })
                   }
                 >
-                  <ArrowUp className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
+                  <ArrowUp className={ACTION_ICON} />
+                </LayerActionButton>
+                <LayerActionButton
                   title="Bajar"
                   onClick={() =>
                     dispatch({ type: "moveLayer", id: l.id, direction: "down" })
                   }
                 >
-                  <ArrowDown className="h-4 w-4" />
-                </Button>
+                  <ArrowDown className={ACTION_ICON} />
+                </LayerActionButton>
+                <span className="mx-0.5 h-4 w-px shrink-0 bg-border" />
+                <LayerActionButton
+                  title="Eliminar"
+                  destructive
+                  onClick={() => dispatch({ type: "removeLayer", id: l.id })}
+                >
+                  <Trash2 className={ACTION_ICON} />
+                </LayerActionButton>
               </div>
-              <Button
-                variant="outline"
-                size="icon"
-                title="Eliminar"
-                onClick={() => dispatch({ type: "removeLayer", id: l.id })}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
             </div>
           ))}
         </div>
