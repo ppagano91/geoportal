@@ -1,5 +1,5 @@
 import React from 'react'
-import { Search } from 'lucide-react'
+import { Search, X } from 'lucide-react'
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/Dialog'
 import { Input } from '../ui/Input'
 import { Button } from '../ui/Button'
@@ -114,6 +114,30 @@ export function WmsDialog({
 	const [queried, setQueried] = React.useState(false)
 	const requestIdRef = React.useRef(0)
 
+	function handleClearWmsSearch() {
+		requestIdRef.current += 1
+		setDiscovering(false)
+		setUrl('')
+		setWmsError(null)
+		setAvailable([])
+		setSelected({})
+		setQueried(false)
+	}
+
+	React.useEffect(() => {
+		if (!wmsError) return
+		const timeout = window.setTimeout(() => {
+			setWmsError(null)
+		}, 5000)
+		return () => {
+			window.clearTimeout(timeout)
+		}
+	}, [wmsError])
+
+	React.useEffect(() => {
+		if (!open) handleClearWmsSearch()
+	}, [open])
+
 	async function discover() {
 		if (!url || discovering) return
 		const requestId = ++requestIdRef.current
@@ -163,15 +187,12 @@ export function WmsDialog({
 		const names = available.filter(a => selected[a.name]).map(a => a.name)
 		if (!url || names.length === 0) return
 		onAdd(url, names)
-		setUrl('')
-		setAvailable([])
-		setSelected({})
-		setWmsError(null)
-		setQueried(false)
 		onOpenChange(false)
 	}
 
 	const selectedCount = available.filter(a => selected[a.name]).length
+	const canClear =
+		url.trim() !== '' || available.length > 0 || queried || wmsError != null
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -193,6 +214,19 @@ export function WmsDialog({
 						value={url}
 						onChange={(e) => setUrl(e.target.value)}
 					/>
+					{canClear && (
+						<Button
+							type="button"
+							variant="outline"
+							size="icon"
+							title="Limpiar"
+							aria-label="Limpiar búsqueda WMS"
+							disabled={discovering}
+							onClick={handleClearWmsSearch}
+						>
+							<X className="h-4 w-4" />
+						</Button>
+					)}
 					<Button
 						type="submit"
 						size="icon"
