@@ -3,11 +3,15 @@ import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { ScrollArea } from "../ui/ScrollArea";
-import { ArrowDown, ArrowUp, Check, Eye, EyeOff, MoreVertical, Pencil, Plus, Settings2, Table2, Trash2, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Download, Eye, EyeOff, MoreVertical, Pencil, Plus, Settings2, Table2, Trash2, Upload } from "lucide-react";
 import type { Layer } from "../../types/geoportal";
 import { computeLayerStats } from "../../utils/stats";
 import { DRAWING_SESSION_LAYER_ID } from "../../persistence/drawingLayers";
 import { geometryTypeLabel } from "../../persistence/editableLayers";
+import {
+  canExportLayerToGeoJSON,
+  exportLayerToGeoJSON,
+} from "../../utils/exportGeoJSON";
 import { CreateEditableLayerDialog } from "./CreateEditableLayerDialog";
 import { cn } from "../../utils/cn";
 
@@ -361,61 +365,38 @@ export function Sidebar(): JSX.Element {
                 >
                   <Trash2 className={ACTION_ICON} />
                 </LayerActionButton>
-                  
-                  {/* <LayerActionButton
-                    title="Más acciones"
-                    active={moreMenuLayerId === l.id}
-                    onClick={() =>
-                      setMoreMenuLayerId((current) =>
-                        current === l.id ? null : l.id,
-                      )
-                    }
-                  >
-                    <MoreVertical className={ACTION_ICON} />
-                  </LayerActionButton> */}
+                  {/* {canExportLayerToGeoJSON(l) && (
+                    <LayerActionButton
+                      title="Más acciones"
+                      active={moreMenuLayerId === l.id}
+                      onClick={() =>
+                        setMoreMenuLayerId((current) =>
+                          current === l.id ? null : l.id,
+                        )
+                      }
+                    >
+                      <MoreVertical className={ACTION_ICON} />
+                    </LayerActionButton>
+                  )} */}
+                  <LayerActionButton
+                  title="Descargar GeoJSON"
+                  onClick={() => exportLayerToGeoJSON(l)}
+                >
+                  <Download className={ACTION_ICON} />
+                </LayerActionButton>
                 </div>
-                {/* {moreMenuLayerId === l.id && (
+                {/* {moreMenuLayerId === l.id && canExportLayerToGeoJSON(l) && (
                   <div className="flex flex-col overflow-hidden rounded-md border py-0.5">
                     <button
                       type="button"
                       className="flex items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-muted"
                       onClick={() => {
-                        dispatch({
-                          type: "moveLayer",
-                          id: l.id,
-                          direction: "up",
-                        });
+                        exportLayerToGeoJSON(l);
                         setMoreMenuLayerId(null);
                       }}
                     >
-                      <ArrowUp className={ACTION_ICON} />
-                      Subir
-                    </button>
-                    <button
-                      type="button"
-                      className="flex items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-muted"
-                      onClick={() => {
-                        dispatch({
-                          type: "moveLayer",
-                          id: l.id,
-                          direction: "down",
-                        });
-                        setMoreMenuLayerId(null);
-                      }}
-                    >
-                      <ArrowDown className={ACTION_ICON} />
-                      Bajar
-                    </button>
-                    <button
-                      type="button"
-                      className="flex items-center gap-2 px-2 py-1.5 text-left text-xs text-destructive hover:bg-muted"
-                      onClick={() => {
-                        dispatch({ type: "removeLayer", id: l.id });
-                        setMoreMenuLayerId(null);
-                      }}
-                    >
-                      <Trash2 className={ACTION_ICON} />
-                      Eliminar
+                      <Download className={ACTION_ICON} />
+                      Descargar GeoJSON
                     </button>
                   </div>
                 )} */}
