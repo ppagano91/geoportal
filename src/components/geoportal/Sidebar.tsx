@@ -22,6 +22,32 @@ import {
 } from "../ui/Dialog";
 import { cn } from "../../utils/cn";
 
+type SidebarTab = "layers" | "wms" | "wfs";
+
+const SIDEBAR_TABS: { id: SidebarTab; label: string }[] = [
+  { id: "layers", label: "Capas" },
+  { id: "wms", label: "WMS" },
+  { id: "wfs", label: "WFS" },
+];
+
+const LOCAL_LAYER_TYPES = new Set<Layer["type"]>([
+  "editable",
+  "user",
+  "drawing",
+]);
+
+function isLocalProjectLayer(layer: Layer): boolean {
+  return (
+    LOCAL_LAYER_TYPES.has(layer.type) &&
+    layer.id !== DRAWING_SESSION_LAYER_ID
+  );
+}
+
+function matchesSearch(layer: Layer, query: string): boolean {
+  if (!query) return true;
+  return layer.name.toLowerCase().includes(query.toLowerCase());
+}
+
 function inferGeometryType(
   fc: GeoJSON.FeatureCollection
 ): Layer["geometryType"] {
@@ -44,6 +70,7 @@ function inferGeometryType(
 
 function layerListSubtitle(layer: Layer): string {
   if (layer.type === "wms") return "WMS";
+  if (layer.type === "wfs") return "WFS";
   if (layer.type === "drawing") {
     return `Dibujo · ${geometryTypeLabel(layer.geometryType)}`;
   }
@@ -91,6 +118,7 @@ export function Sidebar(): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
   const { state, dispatch, measureEngineRef } = ctx;
   const inputRef = useRef<HTMLInputElement>(null);
+  const [activeTab, setActiveTab] = useState<SidebarTab>("layers");
   const [createEditableOpen, setCreateEditableOpen] = useState(false);
   const [moreMenuLayerId, setMoreMenuLayerId] = useState<string | null>(null);
   const [layerPendingDeletion, setLayerPendingDeletion] = useState<{
@@ -119,15 +147,42 @@ export function Sidebar(): JSX.Element {
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [moreMenuLayerId]);
 
-  const filtered = useMemo(
+  const query = state.searchQuery;
+  const localLayers = useMemo(
     () =>
       state.layers.filter(
-        (l) =>
-          l.id !== DRAWING_SESSION_LAYER_ID &&
-          l.name.toLowerCase().includes(state.searchQuery.toLowerCase()),
+        (l) => isLocalProjectLayer(l) && matchesSearch(l, query),
       ),
-    [state.layers, state.searchQuery],
+    [state.layers, query],
   );
+  const wmsLayers = useMemo(
+    () =>
+      state.layers.filter(
+        (l) => l.type === "wms" && matchesSearch(l, query),
+      ),
+    [state.layers, query],
+  );
+  const wfsLayers = useMemo(
+    () =>
+      state.layers.filter(
+        (l) => l.type === "wfs" && matchesSearch(l, query),
+      ),
+    [state.layers, query],
+  );
+
+  const displayedLayers =
+    activeTab === "layers"
+      ? localLayers
+      : activeTab === "wms"
+        ? wmsLayers
+        : wfsLayers;
+
+  const emptyMessage =
+    activeTab === "layers"
+      ? "No hay capas."
+      : activeTab === "wms"
+        ? "No hay capas WMS cargadas."
+        : "No hay capas WFS cargadas.";
 
   function onDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
@@ -193,37 +248,79 @@ export function Sidebar(): JSX.Element {
 
   return (
     <div className="h-full flex flex-col">
-      <div
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={onDrop}
-        className="p-3 border-b"
+      <nav
+        className="flex shrink-0 overflow-hidden border-b"
+        role="tablist"
+        aria-label="Capas del mapa"
       >
-        <div className="surface p-3 border-dashed border-2 border-border/60 text-sm text-muted-foreground rounded-md text-center">
-          Arrastra y suelta GeoJSON aquí
-          <div className="mt-2">
-            <input
-              ref={inputRef}
-              type="file"
-              accept=".json,.geojson,application/geo+json,application/json"
-              className="hidden"
-              onChange={onSelectFile}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => inputRef.current?.click()}
+        {SIDEBAR_TABS.map((tab) => {
+          const active = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => {
+                setActiveTab(tab.id);
+                setMoreMenuLayerId(null);
+              }}
+              className={cn(
+                "min-w-0 flex-1 truncate px-1 py-2 text-center text-sm border-b-2 -mb-px",
+                active
+                  ? "border-primary bg-muted/70 font-medium text-foreground"
+                  : "border-transparent font-normal text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+              )}
             >
-              <Upload className="h-4 w-4 mr-2" /> Seleccionar archivo
-            </Button>
-          </div>
-        </div>
-        <Button
-          className="mt-3 w-full"
-          onClick={() => setCreateEditableOpen(true)}
+              {tab.label}
+            </button>
+          );
+        })}
+      </nav>
+      {activeTab === "layers" && (
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={onDrop}
+          className="p-3 border-b"
         >
-          <Plus className="mr-2 h-4 w-4" /> Crear capa editable
-        </Button>
-      </div>
+          <div className="surface p-3 border-dashed border-2 border-border/60 text-sm text-muted-foreground rounded-md text-center">
+            Arrastra y suelta GeoJSON aquí
+            <div className="mt-2">
+              <input
+                ref={inputRef}
+                type="file"
+                accept=".json,.geojson,application/geo+json,application/json"
+                className="hidden"
+                onChange={onSelectFile}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => inputRef.current?.click()}
+              >
+                <Upload className="h-4 w-4 mr-2" /> Seleccionar archivo
+              </Button>
+            </div>
+          </div>
+          <Button
+            className="mt-3 w-full"
+            onClick={() => setCreateEditableOpen(true)}
+          >
+            <Plus className="mr-2 h-4 w-4" /> Crear capa editable
+          </Button>
+        </div>
+      )}
+      {activeTab === "wms" && (
+        <div className="p-3 border-b">
+          <Button
+            className="w-full"
+            size="sm"
+            onClick={() => dispatch({ type: "openWmsDialog" })}
+          >
+            <Plus className="mr-2 h-4 w-4" /> Agregar WMS
+          </Button>
+        </div>
+      )}
       <CreateEditableLayerDialog
         open={createEditableOpen}
         onOpenChange={setCreateEditableOpen}
@@ -260,24 +357,25 @@ export function Sidebar(): JSX.Element {
           </Button>
         </DialogFooter>
       </Dialog>
-      <div className="p-3">
-        <Input
-          placeholder="Filtrar capas"
-          value={state.searchQuery}
-          onChange={(e) =>
-            dispatch({ type: "setSearch", query: e.target.value })
-          }
-        />
-      </div>
+      {activeTab !== "wfs" && (
+        <div className="p-3">
+          <Input
+            placeholder="Filtrar capas"
+            value={state.searchQuery}
+            onChange={(e) =>
+              dispatch({ type: "setSearch", query: e.target.value })
+            }
+          />
+        </div>
+      )}
       <ScrollArea className="flex-1 px-3 pb-3">
-        {filtered.length === 0 && (
+        {displayedLayers.length === 0 && (
           <div className="text-sm text-muted-foreground p-3">
-            No hay capas. Cargue un GeoJSON o cree una capa editable para
-            comenzar.
+            {emptyMessage}
           </div>
         )}
         <div className="flex flex-col gap-2 mt-1">
-          {filtered.map((l) => (
+          {displayedLayers.map((l) => (
             <div
               key={l.id}
               className={`surface flex flex-col gap-1.5 p-2 ${
@@ -304,7 +402,7 @@ export function Sidebar(): JSX.Element {
                     En edición
                   </span>
                 )}
-                  </div>                
+                  </div>
                 <div className="truncate text-xs text-muted-foreground">
                   {layerListSubtitle(l)}
                 </div>
@@ -381,7 +479,7 @@ export function Sidebar(): JSX.Element {
                     >
                       <Table2 className={ACTION_ICON} />
                     </LayerActionButton>
-                  )}                   
+                  )}
                 <LayerActionButton
                   title="Subir"
                   onClick={() =>
@@ -421,12 +519,14 @@ export function Sidebar(): JSX.Element {
                       <MoreVertical className={ACTION_ICON} />
                     </LayerActionButton>
                   )} */}
-                  <LayerActionButton
-                  title="Descargar GeoJSON"
-                  onClick={() => exportLayerToGeoJSON(l)}
-                >
-                  <Download className={ACTION_ICON} />
-                </LayerActionButton>
+                  {l.type !== "wms" && l.type !== "wfs" && (
+                    <LayerActionButton
+                      title="Descargar GeoJSON"
+                      onClick={() => exportLayerToGeoJSON(l)}
+                    >
+                      <Download className={ACTION_ICON} />
+                    </LayerActionButton>
+                  )}
                 </div>
                 {/* {moreMenuLayerId === l.id && canExportLayerToGeoJSON(l) && (
                   <div className="flex flex-col overflow-hidden rounded-md border py-0.5">
@@ -447,24 +547,8 @@ export function Sidebar(): JSX.Element {
             </div>
           ))}
         </div>
-        <div className="mt-4 surface p-3 flex items-center justify-between">
-          <div className="font-medium">Capas WMS</div>
-          <WmsButton />
-        </div>
       </ScrollArea>
     </div>
-  );
-}
-
-function WmsButton(): JSX.Element {
-  const ctx = useContext(GeoPortalContext)!;
-  const { dispatch } = ctx;
-  return (
-    <React.Fragment>
-      <Button size="sm" onClick={() => dispatch({ type: "openWmsDialog" })}>
-        Agregar WMS
-      </Button>
-    </React.Fragment>
   );
 }
 
