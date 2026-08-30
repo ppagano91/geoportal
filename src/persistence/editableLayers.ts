@@ -333,7 +333,10 @@ export function normalizeLayerFields(value: unknown): LayerField[] | null {
 		if (!isRecord(item)) continue;
 		if (typeof item.name !== "string" || !isFieldType(item.type)) continue;
 		const name = item.name.trim();
-		if (validateFieldName(name) != null) continue;
+		// Persistencia: aceptar nombres originales de GeoJSON (espacios, etc.).
+		// El modal de creación sigue usando validateFieldName / parseEditableFields.
+		if (name === "") continue;
+		if (RESERVED_FIELD_NAMES.has(name.toLowerCase())) continue;
 		const key = name.toLowerCase();
 		if (seen.has(key)) continue;
 		seen.add(key);
@@ -349,6 +352,7 @@ export function createEditableLayer(options: {
 	fields: LayerField[];
 	visible?: boolean;
 	color?: string;
+	data?: GeoJSON.FeatureCollection;
 }): EditableLayer {
 	const color = options.color ?? DEFAULT_EDITABLE_COLOR;
 	const name = options.name.trim();
@@ -356,10 +360,9 @@ export function createEditableLayer(options: {
 		name: field.name.trim(),
 		type: field.type,
 	}));
-	const data: GeoJSON.FeatureCollection = {
-		type: "FeatureCollection",
-		features: [],
-	};
+	const data: GeoJSON.FeatureCollection = options.data
+		? cloneJson(options.data) ?? { type: "FeatureCollection", features: [] }
+		: { type: "FeatureCollection", features: [] };
 
 	return {
 		id: options.id ?? crypto.randomUUID(),
@@ -384,11 +387,19 @@ export function createEditableLayer(options: {
 			strokeWidth: 1.5,
 		},
 		stats: {
-			featureCount: 0,
+			featureCount: data.features.length,
 			geometryType: options.geometryType,
 			propertyKeys: fields.map((field) => field.name),
 		},
 	};
+}
+
+function cloneJson<T>(value: T): T | undefined {
+	try {
+		return JSON.parse(JSON.stringify(value)) as T;
+	} catch {
+		return undefined;
+	}
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

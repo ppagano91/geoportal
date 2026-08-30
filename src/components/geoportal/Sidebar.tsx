@@ -5,11 +5,10 @@ import { Input } from "../ui/Input";
 import { ScrollArea } from "../ui/ScrollArea";
 import { ArrowDown, ArrowUp, Check, Download, Eye, EyeOff, MoreVertical, Pencil, Plus, Settings2, Table2, Trash2, Upload } from "lucide-react";
 import type { Layer } from "../../types/geoportal";
-import { computeLayerStats } from "../../utils/stats";
 import { DRAWING_SESSION_LAYER_ID } from "../../persistence/drawingLayers";
 import { geometryTypeLabel } from "../../persistence/editableLayers";
+import { createEditableLayerFromGeoJSON } from "../../persistence/importGeoJSON";
 import {
-  canExportLayerToGeoJSON,
   exportLayerToGeoJSON,
 } from "../../utils/exportGeoJSON";
 import { CreateEditableLayerDialog } from "./CreateEditableLayerDialog";
@@ -46,26 +45,6 @@ function isLocalProjectLayer(layer: Layer): boolean {
 function matchesSearch(layer: Layer, query: string): boolean {
   if (!query) return true;
   return layer.name.toLowerCase().includes(query.toLowerCase());
-}
-
-function inferGeometryType(
-  fc: GeoJSON.FeatureCollection
-): Layer["geometryType"] {
-  for (const f of fc.features) {
-    const t = f.geometry?.type;
-    if (
-      t &&
-      (t === "Point" ||
-        t === "MultiPoint" ||
-        t === "LineString" ||
-        t === "MultiLineString" ||
-        t === "Polygon" ||
-        t === "MultiPolygon")
-    ) {
-      return t;
-    }
-  }
-  return undefined;
 }
 
 function layerListSubtitle(layer: Layer): string {
@@ -125,6 +104,7 @@ export function Sidebar(): JSX.Element {
     id: string;
     name: string;
   } | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
   function confirmDeleteLayer() {
@@ -184,54 +164,54 @@ export function Sidebar(): JSX.Element {
         ? "No hay capas WMS cargadas."
         : "No hay capas WFS cargadas.";
 
+  function isGeoJSONFile(file: File): boolean {
+    const name = file.name.toLowerCase();
+    return (
+      name.endsWith(".geojson") ||
+      name.endsWith(".json") ||
+      file.type === "application/geo+json" ||
+      file.type === "application/json"
+    );
+  }
+
+  async function importGeoJSONFile(file: File): Promise<string | null> {
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      return "No se pudo leer el archivo.";
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return "El archivo no es un GeoJSON válido.";
+    }
+    const name = file.name.replace(/\.(geo)?json$/i, "") || "Capa importada";
+    const result = createEditableLayerFromGeoJSON({ name, geojson: parsed });
+    if ("error" in result) return result.error;
+    dispatch({ type: "addLayer", layer: result.layer });
+    dispatch({ type: "setActiveLayer", id: result.layer.id });
+    return null;
+  }
+
   function onDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
-    const files = Array.from(e.dataTransfer.files);
-    for (const file of files) {
-      if (
-        file.name.toLowerCase().endsWith(".geojson") ||
-        file.type === "application/geo+json" ||
-        file.type === "application/json"
-      ) {
-        file.text().then((txt) => {
-          try {
-            const data = JSON.parse(txt) as GeoJSON.FeatureCollection;
-            const layer: Layer = {
-              id: crypto.randomUUID(),
-              name: file.name.replace(/\.(geo)?json$/i, ""),
-              type: "user",
-              visible: true,
-              data,
-              geometryType: inferGeometryType(data),
-              pointStyle: {
-                type: "circle",
-                size: 10,
-                color: "#0ea5e9",
-                strokeColor: "#0b87bf",
-                strokeWidth: 1.5,
-              },
-              lineStyle: { color: "#0ea5e9", width: 2, lineCap: "round" },
-              polygonStyle: {
-                fillColor: "#0ea5e9",
-                fillOpacity: 0.2,
-                strokeColor: "#0ea5e9",
-                strokeWidth: 1.5,
-              },
-              cluster: {
-                enabled: false,
-                radius: 50,
-                maxZoom: 14,
-                minPoints: 2,
-              },
-              stats: computeLayerStats(data),
-            };
-            dispatch({ type: "addLayer", layer });
-          } catch {
-            // ignore bad file
-          }
-        });
-      }
+    const files = Array.from(e.dataTransfer.files).filter(isGeoJSONFile);
+    if (files.length === 0) {
+      setImportError("Seleccioná un archivo GeoJSON.");
+      return;
     }
+    void (async () => {
+      const errors: string[] = [];
+      for (const file of files) {
+        const error = await importGeoJSONFile(file);
+        if (error) {
+          errors.push(files.length > 1 ? `${file.name}: ${error}` : error);
+        }
+      }
+      setImportError(errors.length > 0 ? errors.join(" ") : null);
+    })();
   }
 
   function onSelectFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -301,6 +281,11 @@ export function Sidebar(): JSX.Element {
                 <Upload className="h-4 w-4 mr-2" /> Seleccionar archivo
               </Button>
             </div>
+            {importError && (
+              <p className="mt-2 text-left text-xs text-destructive">
+                {importError}
+              </p>
+            )}
           </div>
           <Button
             className="mt-3 w-full"
