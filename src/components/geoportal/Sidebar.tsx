@@ -13,6 +13,13 @@ import {
   exportLayerToGeoJSON,
 } from "../../utils/exportGeoJSON";
 import { CreateEditableLayerDialog } from "./CreateEditableLayerDialog";
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/Dialog";
 import { cn } from "../../utils/cn";
 
 function inferGeometryType(
@@ -86,7 +93,21 @@ export function Sidebar(): JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
   const [createEditableOpen, setCreateEditableOpen] = useState(false);
   const [moreMenuLayerId, setMoreMenuLayerId] = useState<string | null>(null);
+  const [layerPendingDeletion, setLayerPendingDeletion] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  function confirmDeleteLayer() {
+    if (!layerPendingDeletion) return;
+    const { id } = layerPendingDeletion;
+    setLayerPendingDeletion(null);
+    if (state.editingLayerId === id) {
+      dispatch({ type: "stopEditingLayer" });
+    }
+    dispatch({ type: "removeLayer", id });
+  }
 
   useEffect(() => {
     if (!moreMenuLayerId) return;
@@ -211,6 +232,34 @@ export function Sidebar(): JSX.Element {
           dispatch({ type: "setActiveLayer", id: layer.id });
         }}
       />
+      <Dialog
+        open={!!layerPendingDeletion}
+        onOpenChange={(open) => {
+          if (!open) setLayerPendingDeletion(null);
+        }}
+        className="w-full max-w-sm p-4"
+      >
+        <DialogHeader>
+          <DialogTitle>Eliminar capa</DialogTitle>
+          <DialogDescription>
+            {`¿Seguro que querés eliminar la capa "${layerPendingDeletion?.name ?? ""}"?`}
+          </DialogDescription>
+          <DialogDescription className="mt-2 text-sm text-muted-foreground">
+            Esta acción no se puede deshacer.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button
+            variant="secondary"
+            onClick={() => setLayerPendingDeletion(null)}
+          >
+            Cancelar
+          </Button>
+          <Button variant="destructive" onClick={confirmDeleteLayer}>
+            Eliminar
+          </Button>
+        </DialogFooter>
+      </Dialog>
       <div className="p-3">
         <Input
           placeholder="Filtrar capas"
@@ -332,15 +381,7 @@ export function Sidebar(): JSX.Element {
                     >
                       <Table2 className={ACTION_ICON} />
                     </LayerActionButton>
-                  )}
-                   <LayerActionButton
-                  title="Propiedades"
-                  onClick={() =>
-                    dispatch({ type: "openLayerSettings", id: l.id })
-                  }
-                >
-                  <Settings2 className={ACTION_ICON} />
-                </LayerActionButton>
+                  )}                   
                 <LayerActionButton
                   title="Subir"
                   onClick={() =>
@@ -361,7 +402,9 @@ export function Sidebar(): JSX.Element {
                 <LayerActionButton
                   title="Eliminar"
                   destructive
-                  onClick={() => dispatch({ type: "removeLayer", id: l.id })}
+                  onClick={() =>
+                    setLayerPendingDeletion({ id: l.id, name: l.name })
+                  }
                 >
                   <Trash2 className={ACTION_ICON} />
                 </LayerActionButton>

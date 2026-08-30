@@ -1808,11 +1808,19 @@ export function MapViewer(): JSX.Element {
     if (!instance?.enabled) return;
     if (prevDrawTargetRef.current === editingLayerId) return;
 
-    if (!suppressDrawSyncRef.current) {
+    const previousTargetId = terraDrawTargetIdRef.current;
+    const previousTargetRemoved =
+      previousTargetId != null &&
+      !layersRef.current.some((layer) => layer.id === previousTargetId);
+    // Drop the snapshot if its layer was deleted; syncing would rewrite session drawings.
+    if (!suppressDrawSyncRef.current && !previousTargetRemoved) {
       const drawings = snapshotToFeatureCollection(instance.getSnapshot());
-      const targetId = terraDrawTargetIdRef.current;
-      if (targetId) {
-        dispatch({ type: "replaceLayerFeatures", id: targetId, data: drawings });
+      if (previousTargetId) {
+        dispatch({
+          type: "replaceLayerFeatures",
+          id: previousTargetId,
+          data: drawings,
+        });
       } else {
         dispatch({ type: "replaceDrawings", drawings });
       }
