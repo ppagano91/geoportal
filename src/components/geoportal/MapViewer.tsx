@@ -6,9 +6,13 @@
   useState,
   useCallback,
 } from "react";
-import maplibregl, { Map, StyleSpecification } from "maplibre-gl";
+import maplibregl, { Map, StyleSpecification, SymbolLayerSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { MaplibreMeasureControl, MaplibreTerradrawControl } from "@watergis/maplibre-gl-terradraw";
+import {
+  MaplibreMeasureControl,
+  MaplibreTerradrawControl,
+  defaultMeasureControlOptions,
+} from "@watergis/maplibre-gl-terradraw";
 import "@watergis/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css";
 import { GeoPortalContext, type DrawEngine, type MeasureEngine } from "../../shell/GeoPortalApp";
 import { BaseMapControl } from "./BaseMapControl";
@@ -141,6 +145,19 @@ const MAPTILER_KEY = env.MAPTILER_KEY;
 const LAYER_CFG_CACHE_KEY = "__layerCfgCache";
 const BUILDINGS_3D_SOURCE_ID = "vect-maptiler";
 const BUILDINGS_3D_LAYER_ID = "buildings-3d";
+const MEASURE_LABEL_TEXT_SIZE = 11;
+
+function withMeasureLabelTextSize(
+  spec: SymbolLayerSpecification,
+): SymbolLayerSpecification {
+  return {
+    ...spec,
+    layout: {
+      ...spec.layout,
+      "text-size": MEASURE_LABEL_TEXT_SIZE,
+    },
+  };
+}
 
 function getCfgCache(map: Map): Record<string, string> {
   return ((map as any)[LAYER_CFG_CACHE_KEY] ??= {});
@@ -1422,6 +1439,15 @@ export function MapViewer(): JSX.Element {
       areaPrecision: 2,
       computeElevation: false,
       adapterOptions: { prefixId: "td-measure" },
+      pointLayerLabelSpec: withMeasureLabelTextSize(
+        defaultMeasureControlOptions.pointLayerLabelSpec!,
+      ),
+      lineLayerLabelSpec: withMeasureLabelTextSize(
+        defaultMeasureControlOptions.lineLayerLabelSpec!,
+      ),
+      polygonLayerSpec: withMeasureLabelTextSize(
+        defaultMeasureControlOptions.polygonLayerSpec!,
+      ),
     });
 
     const applyMeasureMode = () => {
