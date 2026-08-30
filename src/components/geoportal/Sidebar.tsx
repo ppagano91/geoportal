@@ -3,15 +3,17 @@ import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { ScrollArea } from "../ui/ScrollArea";
-import { ArrowDown, ArrowUp, Check, Download, Eye, EyeOff, Locate, MoreVertical, Pencil, Plus, Settings2, Table2, Trash2, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Download, Eye, EyeOff, Locate, MoreVertical, Pencil, Plus, Settings2, Table2, Trash2, Upload, MapPinPlus, LayersPlus  } from "lucide-react";
 import type { Layer } from "../../types/geoportal";
 import { DRAWING_SESSION_LAYER_ID } from "../../persistence/drawingLayers";
 import { geometryTypeLabel } from "../../persistence/editableLayers";
 import { createEditableLayerFromGeoJSON } from "../../persistence/importGeoJSON";
+import { createEditableLayerFromWfs } from "../../persistence/wfsLayers";
 import {
   exportLayerToGeoJSON,
 } from "../../utils/exportGeoJSON";
 import { zoomToFeatureCollection } from "../../utils/geo";
+import { DEFAULT_WFS_FEATURE_LIMIT } from "../../utils/wfs";
 import { CreateEditableLayerDialog } from "./CreateEditableLayerDialog";
 import {
   Dialog,
@@ -112,6 +114,10 @@ export function Sidebar(): JSX.Element {
     name: string;
   } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{
+    kind: "success" | "error" | "info";
+    text: string;
+  } | null>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
   function confirmDeleteLayer() {
@@ -123,6 +129,12 @@ export function Sidebar(): JSX.Element {
     }
     dispatch({ type: "removeLayer", id });
   }
+
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(null), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
 
   useEffect(() => {
     if (!moreMenuLayerId) return;
@@ -231,6 +243,26 @@ export function Sidebar(): JSX.Element {
       dataTransfer: dt,
     } as unknown as React.DragEvent<HTMLDivElement>);
     e.currentTarget.value = "";
+  }
+
+  function convertWfsToLocal(layer: Layer) {
+    setMoreMenuLayerId(null);
+    const result = createEditableLayerFromWfs(layer, state.layers);
+    if ("error" in result) {
+      setNotice({ kind: "error", text: result.error });
+      return;
+    }
+    dispatch({ type: "addLayer", layer: result.layer });
+    dispatch({ type: "setActiveLayer", id: result.layer.id });
+    setActiveTab("layers");
+    setNotice(
+      result.truncated
+        ? {
+            kind: "info",
+            text: `La capa local se creó con las ${DEFAULT_WFS_FEATURE_LIMIT} entidades actualmente cargadas del WFS.`,
+          }
+        : { kind: "success", text: "Capa local creada correctamente." },
+    );
   }
 
   return (
@@ -361,6 +393,20 @@ export function Sidebar(): JSX.Element {
         </DialogFooter>
       </Dialog>
       <div className="p-3">
+        {notice && (
+          <div className="mb-2 h-5 overflow-hidden">
+            <div
+              role={notice.kind === "error" ? "alert" : undefined}
+              className={
+                notice.kind === "error"
+                  ? "h-full overflow-y-auto px-1 text-xs leading-4 text-destructive"
+                  : "h-full overflow-y-auto px-1 text-xs leading-4 text-muted-foreground"
+              }
+            >
+              {notice.text}
+            </div>
+          </div>
+        )}
         <Input
           placeholder="Filtrar capas"
           value={state.searchQuery}
@@ -519,19 +565,7 @@ export function Sidebar(): JSX.Element {
                 >
                   <Trash2 className={ACTION_ICON} />
                 </LayerActionButton>
-                  {/* {canExportLayerToGeoJSON(l) && (
-                    <LayerActionButton
-                      title="Más acciones"
-                      active={moreMenuLayerId === l.id}
-                      onClick={() =>
-                        setMoreMenuLayerId((current) =>
-                          current === l.id ? null : l.id,
-                        )
-                      }
-                    >
-                      <MoreVertical className={ACTION_ICON} />
-                    </LayerActionButton>
-                  )} */}
+                             
                   {l.type !== "wms" && l.type !== "wfs" && (
                     <LayerActionButton
                       title="Descargar GeoJSON"
@@ -540,22 +574,16 @@ export function Sidebar(): JSX.Element {
                       <Download className={ACTION_ICON} />
                     </LayerActionButton>
                   )}
-                </div>
-                {/* {moreMenuLayerId === l.id && canExportLayerToGeoJSON(l) && (
-                  <div className="flex flex-col overflow-hidden rounded-md border py-0.5">
-                    <button
-                      type="button"
-                      className="flex items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-muted"
-                      onClick={() => {
-                        exportLayerToGeoJSON(l);
-                        setMoreMenuLayerId(null);
-                      }}
-                    >
-                      <Download className={ACTION_ICON} />
-                      Descargar GeoJSON
-                    </button>
-                  </div>
-                )} */}
+                  {l.type === "wfs" && (
+                  <LayerActionButton
+                  title="Convertir a capa local"
+                  onClick={() => convertWfsToLocal(l)}
+                >
+                  <LayersPlus className={ACTION_ICON} />                  
+                </LayerActionButton>
+                )}     
+                  
+                </div>                
               </div>
             </div>
           ))}

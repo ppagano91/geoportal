@@ -1,5 +1,6 @@
 import type {
 	ClusterConfig,
+	EditableLayer,
 	GeometryType,
 	Layer,
 	LineStyle,
@@ -7,7 +8,12 @@ import type {
 	PolygonStyle,
 	WfsLayer,
 } from '../types/geoportal'
-import { inferFieldsFromFeatures } from './importGeoJSON'
+import {
+	createEditableLayer,
+	isEditableGeometryType,
+	uniqueLocalLayerName,
+} from './editableLayers'
+import { createEditableLayerFromGeoJSON, inferFieldsFromFeatures } from './importGeoJSON'
 import { computeLayerStats } from '../utils/stats'
 import {
 	collectGeometryTypes,
@@ -117,6 +123,111 @@ export function createWfsLayer(options: {
 			strokeWidth: 1.5,
 		},
 		cluster: options.cluster,
+	}
+}
+
+export type ConvertWfsResult =
+	| { layer: EditableLayer; truncated: boolean }
+	| { error: string }
+
+/**
+ * Copia el FeatureCollection cargado de un WFS a una EditableLayer independiente.
+ * No muta ni reutiliza la capa WFS original.
+ */
+export function createEditableLayerFromWfs(
+	source: Layer,
+	existingLayers: Layer[],
+): ConvertWfsResult {
+	if (!isWfsLayer(source)) {
+		return { error: 'No se pudo crear la capa local.' }
+	}
+
+	const cloned = cloneJson(source.data)
+	if (!cloned || cloned.type !== 'FeatureCollection' || !Array.isArray(cloned.features)) {
+		return { error: 'No se pudo crear la capa local.' }
+	}
+
+	const name = uniqueLocalLayerName(source.name, existingLayers)
+	const truncated = !!source.wfsTruncated
+
+	if (cloned.features.length === 0) {
+		if (!isEditableGeometryType(source.geometryType)) {
+			if (source.geometryType) {
+				return {
+					error:
+						'La capa contiene tipos de geometría no compatibles con la edición actual.',
+				}
+			}
+			return {
+				error:
+					'No se puede crear una capa editable porque la capa WFS no contiene entidades y no se pudo determinar su tipo de geometría.',
+			}
+		}
+		return {
+			layer: withCopiedWfsStyle(
+				createEditableLayer({
+					name,
+					geometryType: source.geometryType,
+					fields: inferFieldsFromFeatures([]),
+					data: { type: 'FeatureCollection', features: [] },
+					visible: source.visible,
+				}),
+				source,
+			),
+			truncated,
+		}
+	}
+
+	const types = collectGeometryTypes(cloned)
+	if (types.length === 0) {
+		return { error: 'No se pudo crear la capa local.' }
+	}
+	if (types.length > 1) {
+		return {
+			error:
+				'No se puede convertir esta capa porque contiene distintos tipos de geometría.',
+		}
+	}
+	if (!isEditableGeometryType(types[0])) {
+		return {
+			error: 'La capa contiene tipos de geometría no compatibles con la edición actual.',
+		}
+	}
+
+	const result = createEditableLayerFromGeoJSON({ name, geojson: cloned })
+	if ('error' in result) {
+		return { error: 'No se pudo crear la capa local.' }
+	}
+
+	return {
+		layer: withCopiedWfsStyle(
+			{ ...result.layer, visible: source.visible },
+			source,
+		),
+		truncated,
+	}
+}
+
+function withCopiedWfsStyle(layer: EditableLayer, source: WfsLayer): EditableLayer {
+	const pointStyle = cloneJson(source.pointStyle)
+	const lineStyle = cloneJson(source.lineStyle)
+	const polygonStyle = cloneJson(source.polygonStyle)
+	const cluster = cloneJson(source.cluster)
+	return {
+		...layer,
+		pointStyle: pointStyle ?? layer.pointStyle,
+		lineStyle: lineStyle ?? layer.lineStyle,
+		polygonStyle: polygonStyle ?? layer.polygonStyle,
+		cluster: cluster ?? layer.cluster,
+	}
+}
+
+function cloneJson<T>(value: T): T | undefined {
+	if (value == null) return undefined
+	try {
+		return JSON.parse(JSON.stringify(value)) as T
+	} catch {
+		return undefined
 	}
 }
 

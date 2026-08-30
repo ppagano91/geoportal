@@ -14,7 +14,7 @@
     "@maplibre/maplibre-gl-compare": "^0.5.0",
     "@watergis/maplibre-gl-terradraw": "^1.13.0",
     "dotenv": "^17.2.3",
-    "lucide-react": "^0.460.0",
+    "lucide-react": "0.557.0",
     "maplibre-gl": "^4.7.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

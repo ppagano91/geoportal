@@ -345,6 +345,25 @@ export function normalizeLayerFields(value: unknown): LayerField[] | null {
 	return fields;
 }
 
+/** Nombre único entre capas locales (editable / user / drawing). */
+export function uniqueLocalLayerName(base: string, layers: Layer[]): string {
+	const used = new Set(
+		layers
+			.filter(
+				(layer) =>
+					layer.type === "editable" ||
+					layer.type === "user" ||
+					layer.type === "drawing",
+			)
+			.map((layer) => layer.name.trim().toLowerCase()),
+	);
+	const trimmed = base.trim() || "Capa local";
+	if (!used.has(trimmed.toLowerCase())) return trimmed;
+	let n = 2;
+	while (used.has(`${trimmed} (${n})`.toLowerCase())) n += 1;
+	return `${trimmed} (${n})`;
+}
+
 export function createEditableLayer(options: {
 	id?: string;
 	name: string;
