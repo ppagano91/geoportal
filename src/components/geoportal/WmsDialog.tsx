@@ -1,4 +1,5 @@
 import React from 'react'
+import { Search } from 'lucide-react'
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/Dialog'
 import { Input } from '../ui/Input'
 import { Button } from '../ui/Button'
@@ -179,12 +180,29 @@ export function WmsDialog({
 				<DialogDescription>Busque capas disponibles desde un servicio WMS y agréguelas al mapa.</DialogDescription>
 			</DialogHeader>
 			<div className="grid gap-3">
-				<div>
-					<Input placeholder="URL del servicio WMS" value={url} onChange={(e) => setUrl(e.target.value)} />
-				</div>
-				<div className="flex gap-2">
-					<Button onClick={discover} disabled={!url || discovering}>{discovering ? 'Buscando…' : 'Buscar capas'}</Button>
-				</div>
+				<form
+					className="flex items-center gap-2"
+					onSubmit={(event) => {
+						event.preventDefault()
+						void discover()
+					}}
+				>
+					<Input
+						className="min-w-0 flex-1"
+						placeholder="URL del servicio WMS"
+						value={url}
+						onChange={(e) => setUrl(e.target.value)}
+					/>
+					<Button
+						type="submit"
+						size="icon"
+						title="Buscar capas WMS"
+						aria-label="Buscar capas WMS"
+						disabled={!url || discovering}
+					>
+						<Search className="h-4 w-4" />
+					</Button>
+				</form>
 				{discovering && (
 					<p className="text-sm text-muted-foreground">Consultando servicio WMS...</p>
 				)}
