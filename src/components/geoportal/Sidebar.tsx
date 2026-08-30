@@ -3,7 +3,7 @@ import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { ScrollArea } from "../ui/ScrollArea";
-import { ArrowDown, ArrowUp, Check, Download, Eye, EyeOff, MoreVertical, Pencil, Plus, Settings2, Table2, Trash2, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Download, Eye, EyeOff, Locate, MoreVertical, Pencil, Plus, Settings2, Table2, Trash2, Upload } from "lucide-react";
 import type { Layer } from "../../types/geoportal";
 import { DRAWING_SESSION_LAYER_ID } from "../../persistence/drawingLayers";
 import { geometryTypeLabel } from "../../persistence/editableLayers";
@@ -11,6 +11,7 @@ import { createEditableLayerFromGeoJSON } from "../../persistence/importGeoJSON"
 import {
   exportLayerToGeoJSON,
 } from "../../utils/exportGeoJSON";
+import { zoomToFeatureCollection } from "../../utils/geo";
 import { CreateEditableLayerDialog } from "./CreateEditableLayerDialog";
 import {
   Dialog,
@@ -49,7 +50,13 @@ function matchesSearch(layer: Layer, query: string): boolean {
 
 function layerListSubtitle(layer: Layer): string {
   if (layer.type === "wms") return "WMS";
-  if (layer.type === "wfs") return "WFS";
+  if (layer.type === "wfs") {
+    const count = layer.data?.features.length ?? 0;
+    const entities = `${count} ${count === 1 ? "entidad" : "entidades"}`;
+    return layer.wfsTruncated
+      ? `Vectorial · ${entities} (límite)`
+      : `Vectorial · ${entities}`;
+  }
   if (layer.type === "drawing") {
     return `Dibujo · ${geometryTypeLabel(layer.geometryType)}`;
   }
@@ -95,7 +102,7 @@ const ACTION_ICON = "h-3.5 w-3.5";
 
 export function Sidebar(): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
-  const { state, dispatch, measureEngineRef } = ctx;
+  const { state, dispatch, measureEngineRef, mapRef } = ctx;
   const inputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<SidebarTab>("layers");
   const [createEditableOpen, setCreateEditableOpen] = useState(false);
@@ -306,6 +313,17 @@ export function Sidebar(): JSX.Element {
           </Button>
         </div>
       )}
+      {activeTab === "wfs" && (
+        <div className="p-3 border-b">
+          <Button
+            className="w-full"
+            size="sm"
+            onClick={() => dispatch({ type: "openWfsDialog" })}
+          >
+            <Plus className="mr-2 h-4 w-4" /> Agregar WFS
+          </Button>
+        </div>
+      )}
       <CreateEditableLayerDialog
         open={createEditableOpen}
         onOpenChange={setCreateEditableOpen}
@@ -342,17 +360,15 @@ export function Sidebar(): JSX.Element {
           </Button>
         </DialogFooter>
       </Dialog>
-      {activeTab !== "wfs" && (
-        <div className="p-3">
-          <Input
-            placeholder="Filtrar capas"
-            value={state.searchQuery}
-            onChange={(e) =>
-              dispatch({ type: "setSearch", query: e.target.value })
-            }
-          />
-        </div>
-      )}
+      <div className="p-3">
+        <Input
+          placeholder="Filtrar capas"
+          value={state.searchQuery}
+          onChange={(e) =>
+            dispatch({ type: "setSearch", query: e.target.value })
+          }
+        />
+      </div>
       <ScrollArea className="flex-1 px-3 pb-3">
         {displayedLayers.length === 0 && (
           <div className="text-sm text-muted-foreground p-3">
@@ -418,6 +434,18 @@ export function Sidebar(): JSX.Element {
                       <EyeOff className={ACTION_ICON} />
                     )}
                   </LayerActionButton>
+                  {l.type === "wfs" && (
+                    <LayerActionButton
+                      title="Zoom a capa"
+                      onClick={() => {
+                        const map = mapRef.current;
+                        if (!map || !l.data) return;
+                        zoomToFeatureCollection(map, l.data);
+                      }}
+                    >
+                      <Locate className={ACTION_ICON} />
+                    </LayerActionButton>
+                  )}
                   {l.type === "editable" && (
                     <LayerActionButton
                       title={
@@ -450,7 +478,7 @@ export function Sidebar(): JSX.Element {
                   >
                     <Settings2 className={ACTION_ICON} />
                   </LayerActionButton>
-                  {l.type === "editable" && (
+                  {(l.type === "editable" || l.type === "wfs") && (
                     <LayerActionButton
                       title="Tabla de atributos"
                       active={state.attributeTableLayerId === l.id}

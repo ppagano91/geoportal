@@ -124,7 +124,7 @@ function detectEditableGeometryType(
  * Unión de keys de todas las features. Tipos inconsistentes → string.
  * No falla la importación.
  */
-function inferFieldsFromFeatures(features: GeoJSON.Feature[]): LayerField[] {
+export function inferFieldsFromFeatures(features: GeoJSON.Feature[]): LayerField[] {
 	const order: string[] = [];
 	const valuesByName = new Map<string, unknown[]>();
 

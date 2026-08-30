@@ -5,6 +5,7 @@ import { Header } from "../components/geoportal/Header";
 import { Sidebar } from "../components/geoportal/Sidebar";
 import { MapViewer } from "../components/geoportal/MapViewer";
 import { WmsDialog } from "../components/geoportal/WmsDialog";
+import { WfsDialog } from "../components/geoportal/WfsDialog";
 import { LayerSettingsDialog } from "../components/geoportal/LayerSettingsDialog";
 import { FeatureAttributesDialog } from "../components/geoportal/FeatureAttributesDialog";
 import { AttributeTable } from "../components/geoportal/AttributeTable";
@@ -25,6 +26,12 @@ import {
   isDrawModeAllowedForEditable,
   snapshotToEditableFeatures,
 } from "../persistence/editableLayers";
+import {
+  loadWfsLayers,
+  patchWfsLayerData,
+  saveWfsLayers,
+} from "../persistence/wfsLayers";
+import { fetchWfsFeatures } from "../utils/wfs";
 
 type Action =
   | { type: "toggleSidebar" }
@@ -61,6 +68,8 @@ type Action =
   | { type: "moveLayer"; id: string; direction: "up" | "down" }
   | { type: "openWmsDialog" }
   | { type: "closeWmsDialog" }
+  | { type: "openWfsDialog" }
+  | { type: "closeWfsDialog" }
   | { type: "openAttributeTable"; id: string }
   | { type: "closeAttributeTable" };
 
@@ -74,6 +83,7 @@ const initialState: GeoPortalState = {
   measureMode: "none",
   drawings: { type: "FeatureCollection", features: [] },
   wmsDialogOpen: false,
+  wfsDialogOpen: false,
   layerSettingsOpen: false,
 };
 
@@ -448,9 +458,14 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
       return { ...state, wmsDialogOpen: true };
     case "closeWmsDialog":
       return { ...state, wmsDialogOpen: false };
+    case "openWfsDialog":
+      return { ...state, wfsDialogOpen: true };
+    case "closeWfsDialog":
+      return { ...state, wfsDialogOpen: false };
     case "openAttributeTable": {
-      const layer = getEditableLayerById(state.layers, action.id);
+      const layer = state.layers.find((item) => item.id === action.id);
       if (!layer) return state;
+      if (layer.type !== "editable" && layer.type !== "wfs") return state;
       return { ...state, attributeTableLayerId: action.id };
     }
     case "closeAttributeTable":
@@ -489,7 +504,7 @@ export function GeoPortalApp(): JSX.Element {
     const theme = savedTheme;
     const baseMap: GeoPortalState["baseMap"] =
       theme === "dark" ? "dark" : "streets";
-    const persistedLayers = loadDrawingLayers();
+    const persistedLayers = [...loadDrawingLayers(), ...loadWfsLayers()];
     return {
       ...s,
       theme,
@@ -506,7 +521,50 @@ export function GeoPortalApp(): JSX.Element {
 
   useEffect(() => {
     saveDrawingLayers(state.layers);
+    saveWfsLayers(state.layers);
   }, [state.layers]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const persisted = loadWfsLayers();
+    for (const layer of persisted) {
+      void (async () => {
+        try {
+          const result = await fetchWfsFeatures({
+            serviceUrl: layer.wfsUrl,
+            typeName: layer.wfsTypeName,
+            version: layer.wfsVersion,
+          });
+          if (cancelled) return;
+          const next = patchWfsLayerData(
+            layer,
+            result.collection,
+            result.truncated,
+          );
+          dispatch({
+            type: "updateLayer",
+            id: layer.id,
+            patch: {
+              data: next.data,
+              stats: next.stats,
+              geometryType: next.geometryType,
+              fields: next.fields,
+              wfsTruncated: next.wfsTruncated,
+            },
+          });
+        } catch (error) {
+          if (cancelled) return;
+          console.warn(
+            `[geoportal] no se pudo restaurar la capa WFS «${layer.name}»`,
+            error,
+          );
+        }
+      })();
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const drawEngineRef = useRef<DrawEngine | null>(null);
   const measureEngineRef = useRef<MeasureEngine | null>(null);
@@ -555,6 +613,17 @@ export function GeoPortalApp(): JSX.Element {
                     dispatch({ type: "addLayer", layer });
                   }
                   dispatch({ type: "closeWmsDialog" });
+                }}
+              />
+              <WfsDialog
+                open={state.wfsDialogOpen}
+                onOpenChange={(o) =>
+                  dispatch({ type: o ? "openWfsDialog" : "closeWfsDialog" })
+                }
+                onAdd={(layers) => {
+                  for (const layer of layers) {
+                    dispatch({ type: "addLayer", layer });
+                  }
                 }}
               />
             </div>

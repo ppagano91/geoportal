@@ -1,14 +1,30 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
 import { Pencil, X } from "lucide-react";
 import { GeoPortalContext } from "../../shell/GeoPortalApp";
-import type { LayerField } from "../../types/geoportal";
-import { getEditableLayerById } from "../../persistence/editableLayers";
+import type { Layer, LayerField } from "../../types/geoportal";
+import { inferFieldsFromFeatures } from "../../persistence/importGeoJSON";
 import { zoomToFeature } from "../../utils/geo";
 import { cn } from "../../utils/cn";
 
 const DEFAULT_HEIGHT = 240;
 const MIN_HEIGHT = 140;
 const MAX_HEIGHT_RATIO = 0.5;
+
+function getAttributeTableLayer(
+  layers: Layer[],
+  id?: string,
+): Layer | undefined {
+  if (!id) return undefined;
+  const layer = layers.find((item) => item.id === id);
+  if (!layer) return undefined;
+  if (layer.type === "editable" || layer.type === "wfs") return layer;
+  return undefined;
+}
+
+function fieldsForTable(layer: Layer): LayerField[] {
+  if (layer.fields && layer.fields.length > 0) return layer.fields;
+  return inferFieldsFromFeatures(layer.data?.features ?? []);
+}
 
 function abbreviateId(id: string): string {
   if (id.length <= 8) return id;
@@ -48,7 +64,7 @@ function maxTableHeight(): number {
 export function AttributeTable(): JSX.Element | null {
   const ctx = useContext(GeoPortalContext)!;
   const { state, dispatch, mapRef } = ctx;
-  const layer = getEditableLayerById(
+  const layer = getAttributeTableLayer(
     state.layers,
     state.attributeTableLayerId,
   );
@@ -79,10 +95,11 @@ export function AttributeTable(): JSX.Element | null {
   if (!layer) return null;
 
   const tableLayer = layer;
-  const features = tableLayer.data.features;
-  const fields = tableLayer.fields;
+  const features = tableLayer.data?.features ?? [];
+  const fields = fieldsForTable(tableLayer);
   const count = features.length;
-  const colSpan = fields.length + 2;
+  const readOnly = tableLayer.type === "wfs";
+  const colSpan = fields.length + (readOnly ? 1 : 2);
 
   function selectFeature(featureId: string | number) {
     dispatch({
@@ -168,9 +185,11 @@ export function AttributeTable(): JSX.Element | null {
                   {field.name}
                 </th>
               ))}
-              <th className="sticky right-0 z-[2] bg-card px-3 py-2 font-medium">
-                Acciones
-              </th>
+              {!readOnly && (
+                <th className="sticky right-0 z-[2] bg-card px-3 py-2 font-medium">
+                  Acciones
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -231,33 +250,35 @@ export function AttributeTable(): JSX.Element | null {
                         {formatFieldValue(field, feature.properties)}
                       </td>
                     ))}
-                    <td
-                      className={cn(
-                        "sticky right-0 px-2 py-1",
-                        selected
-                          ? "bg-primary/15 group-hover:bg-primary/20"
-                          : "bg-card group-hover:bg-muted/70",
-                      )}
-                    >
-                      <button
-                        type="button"
-                        title="Editar atributos"
-                        className="control h-7 w-7 p-0"
-                        disabled={featureId == null}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          if (featureId == null) return;
-                          dispatch({
-                            type: "openFeatureAttributes",
-                            layerId: tableLayer.id,
-                            featureId,
-                          });
-                        }}
-                        onDoubleClick={(event) => event.stopPropagation()}
+                    {!readOnly && (
+                      <td
+                        className={cn(
+                          "sticky right-0 px-2 py-1",
+                          selected
+                            ? "bg-primary/15 group-hover:bg-primary/20"
+                            : "bg-card group-hover:bg-muted/70",
+                        )}
                       >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                    </td>
+                        <button
+                          type="button"
+                          title="Editar atributos"
+                          className="control h-7 w-7 p-0"
+                          disabled={featureId == null}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (featureId == null) return;
+                            dispatch({
+                              type: "openFeatureAttributes",
+                              layerId: tableLayer.id,
+                              featureId,
+                            });
+                          }}
+                          onDoubleClick={(event) => event.stopPropagation()}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })

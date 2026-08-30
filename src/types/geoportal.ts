@@ -67,6 +67,14 @@ export interface Layer {
 	stats?: LayerStats
 	wmsUrl?: string
 	wmsLayers?: string
+	/** URL base del servicio WFS (sin GetFeature). */
+	wfsUrl?: string
+	/** FeatureType técnico (`Name` de GetCapabilities). */
+	wfsTypeName?: string
+	/** Versión WFS negociada con el servidor, p.ej. `"2.0.0"`. */
+	wfsVersion?: string
+	/** True si GetFeature devolvió exactamente el límite configurado. */
+	wfsTruncated?: boolean
 	/** Esquema de atributos. Obligatorio en capas `editable`. */
 	fields?: LayerField[]
 }
@@ -82,6 +90,14 @@ export type EditableLayer = Layer & {
 	type: 'editable'
 	geometryType: EditableGeometryType
 	fields: LayerField[]
+	data: GeoJSON.FeatureCollection
+}
+
+/** Capa WFS remota, vectorial y de solo lectura. No es una EditableLayer. */
+export type WfsLayer = Layer & {
+	type: 'wfs'
+	wfsUrl: string
+	wfsTypeName: string
 	data: GeoJSON.FeatureCollection
 }
 
@@ -114,6 +130,7 @@ export interface GeoPortalState {
 	measureMode: MeasureMode
 	drawings: GeoJSON.FeatureCollection
 	wmsDialogOpen: boolean
+	wfsDialogOpen: boolean
 	compareEnabled?: boolean
 	terrainEnabled?: boolean
 }

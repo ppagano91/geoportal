@@ -7,7 +7,12 @@ import { Label } from "../ui/Label";
 import { Slider } from "../ui/Slider";
 import { Select } from "../ui/Select";
 import { fieldTypeLabel, geometryTypeLabel } from "../../persistence/editableLayers";
-import type { LineStyle, PointStyle } from "../../types/geoportal";
+import {
+  DEFAULT_WFS_FEATURE_LIMIT,
+  collectGeometryTypes,
+  geometryFamilies,
+} from "../../utils/wfs";
+import type { GeometryType, LineStyle, PointStyle } from "../../types/geoportal";
 
 function toHex(s: string): string {
   return /^#/.test(s) ? s : `#${s}`;
@@ -137,13 +142,27 @@ export function LayerSettingsDialog(): JSX.Element | null {
   const open = !!layer;
   if (!open || !layer) return null;
 
+  const isWfs = layer.type === "wfs";
+  const detectedTypes: GeometryType[] = layer.data
+    ? collectGeometryTypes(layer.data)
+    : layer.geometryType
+      ? [layer.geometryType]
+      : [];
+  const families = isWfs
+    ? geometryFamilies(detectedTypes)
+    : { point: false, line: false, polygon: false };
   const isPoint =
-    layer.geometryType === "Point" || layer.geometryType === "MultiPoint";
+    families.point ||
+    layer.geometryType === "Point" ||
+    layer.geometryType === "MultiPoint";
   const isLine =
+    families.line ||
     layer.geometryType === "LineString" ||
     layer.geometryType === "MultiLineString";
   const isPolygon =
-    layer.geometryType === "Polygon" || layer.geometryType === "MultiPolygon";
+    families.polygon ||
+    layer.geometryType === "Polygon" ||
+    layer.geometryType === "MultiPolygon";
 
   const fields = layer.fields ?? [];
   const close = () => dispatch({ type: "closeLayerSettings" });
@@ -242,6 +261,48 @@ export function LayerSettingsDialog(): JSX.Element | null {
                           </div>
                         </div>
                       )}
+                    </Section>
+                  </>
+                ) : isWfs ? (
+                  <>
+                    <Section title="General">
+                      <InfoGrid>
+                        <InfoRow label="Nombre">
+                          <Input
+                            className="h-8"
+                            value={layer.name}
+                            onChange={(e) =>
+                              dispatch({
+                                type: "updateLayer",
+                                id: layer.id,
+                                patch: { name: e.target.value },
+                              })
+                            }
+                          />
+                        </InfoRow>
+                        <InfoRow label="Tipo">WFS</InfoRow>
+                        <InfoRow label="Servicio">
+                          <span className="break-all font-mono text-xs font-normal">
+                            {layer.wfsUrl}
+                          </span>
+                        </InfoRow>
+                        <InfoRow label="FeatureType">
+                          <span className="break-all font-mono text-xs">
+                            {layer.wfsTypeName}
+                          </span>
+                        </InfoRow>
+                        <InfoRow label="Entidades">
+                          {layer.data?.features.length ?? 0}
+                          {layer.wfsTruncated
+                            ? ` (primeras ${DEFAULT_WFS_FEATURE_LIMIT})`
+                            : ""}
+                        </InfoRow>
+                        <InfoRow label="Geometría">
+                          {detectedTypes.length > 0
+                            ? detectedTypes.map(geometryTypeLabel).join(", ")
+                            : geometryTypeLabel(layer.geometryType)}
+                        </InfoRow>
+                      </InfoGrid>
                     </Section>
                   </>
                 ) : (

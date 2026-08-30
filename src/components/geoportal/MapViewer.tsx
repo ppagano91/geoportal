@@ -121,12 +121,10 @@ const BASEMAPS = {
       carto: {
         type: "raster",
         tiles: [
-          "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-          "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-          "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+          "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}.png",
         ],
         tileSize: 256,
-        attribution: "© CARTO",
+        attribution: "© Stadia Maps",
       } as any,
     },
     layers: [{ id: "carto", type: "raster", source: "carto" } as any],
@@ -927,6 +925,16 @@ const GEOJSON_LAYER_PREFIXES = [
   "pl-",
 ] as const;
 
+function featureFromLayer(
+  layer: Layer | undefined,
+  featureId: string | number | undefined,
+): GeoJSON.Feature | undefined {
+  if (!layer?.data || featureId == null) return undefined;
+  return layer.data.features.find(
+    (feature) => String(feature.id) === String(featureId),
+  );
+}
+
 function featureFromEditableLayer(
   layer: EditableLayer | undefined,
   featureId: string | number | undefined,
@@ -1053,14 +1061,12 @@ export function MapViewer(): JSX.Element {
   drawDocumentRef.current = drawDocument;
   featureAttributesOpenRef.current = !!state.featureAttributesOpen;
   attributeTableLayerIdRef.current = state.attributeTableLayerId;
-  const selectedLayer = getEditableLayerById(
-    state.layers,
-    state.selectedFeatureLayerId,
+  const selectedLayer = state.layers.find(
+    (item) => item.id === state.selectedFeatureLayerId,
   );
   selectedHighlightRef.current =
     selectedLayer?.visible
-      ? featureFromEditableLayer(selectedLayer, state.selectedFeatureId) ??
-        null
+      ? featureFromLayer(selectedLayer, state.selectedFeatureId) ?? null
       : null;
 
   // const [features, setFeatures] = useState({});

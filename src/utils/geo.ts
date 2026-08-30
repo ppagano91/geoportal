@@ -155,6 +155,49 @@ export function distanceToFeaturePx(
   return Infinity;
 }
 
+export function boundsOfFeatureCollection(
+  fc: GeoJSON.FeatureCollection,
+): [number, number, number, number] | null {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const feature of fc.features) {
+    if (!feature.geometry) continue;
+    const b = boundsOfGeometry(feature.geometry);
+    if (!b) continue;
+    minX = Math.min(minX, b[0]);
+    minY = Math.min(minY, b[1]);
+    maxX = Math.max(maxX, b[2]);
+    maxY = Math.max(maxY, b[3]);
+  }
+  if (!Number.isFinite(minX)) return null;
+  return [minX, minY, maxX, maxY];
+}
+
+export function zoomToFeatureCollection(
+  map: Map,
+  fc: GeoJSON.FeatureCollection,
+): void {
+  const bounds = boundsOfFeatureCollection(fc);
+  if (!bounds) return;
+  if (bounds[0] === bounds[2] && bounds[1] === bounds[3]) {
+    map.easeTo({
+      center: [bounds[0], bounds[1]],
+      zoom: Math.max(map.getZoom(), 16),
+      duration: 400,
+    });
+    return;
+  }
+  map.fitBounds(
+    [
+      [bounds[0], bounds[1]],
+      [bounds[2], bounds[3]],
+    ],
+    { padding: 72, maxZoom: 17, duration: 400 },
+  );
+}
+
 export function zoomToFeature(map: Map, feature: GeoJSON.Feature): void {
   const geometry = feature.geometry;
   if (!geometry) return;
