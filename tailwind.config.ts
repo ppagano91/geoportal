@@ -15,13 +15,14 @@ export default {
 		},
 		extend: {
 			zIndex: {
-				'map-controls': '20',
+				map: '0',
+				'map-controls': '10',
 				'mobile-nav': '30',
 				sidebar: '40',
 				header: '50',
-				'action-sheet': '55',
-				modal: '60',
-				toast: '70'
+				'action-sheet': '50',
+				modal: '100',
+				toast: '110'
 			},
 			colors: {
 				background: 'hsl(var(--background))',

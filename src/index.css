@@ -88,6 +88,26 @@
     width 200ms ease;
 }
 
+/*
+  Aísla el mapa: canvas + controles MapLibre viven en este stacking context
+  y no pueden pintarse encima del sidebar / bottom sheet.
+*/
+.geoportal-map {
+  isolation: isolate;
+  z-index: 0;
+}
+.geoportal-map .maplibregl-canvas-container {
+  z-index: 0;
+}
+.geoportal-map .maplibregl-control-container,
+.geoportal-map .maplibregl-ctrl-top-left,
+.geoportal-map .maplibregl-ctrl-top-right,
+.geoportal-map .maplibregl-ctrl-bottom-left,
+.geoportal-map .maplibregl-ctrl-bottom-right,
+.geoportal-map .maplibregl-ctrl-custom-top-right {
+  z-index: 10;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .gp-sidebar-panel {
     transition: none !important;

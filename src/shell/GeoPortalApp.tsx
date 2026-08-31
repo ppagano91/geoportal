@@ -686,7 +686,7 @@ export function GeoPortalApp(): JSX.Element {
         <main className="flex h-full min-w-0 flex-1 flex-col">
           <Header />
           <div className="relative flex min-h-0 flex-1 flex-col">
-            <div className="relative min-h-0 flex-1">
+            <div className="relative min-h-0 flex-1 overflow-hidden">
               <MapViewer
                 moreToolsOpen={isMobile && mobilePanel === "more"}
                 onMoreToolsOpenChange={(open) =>
@@ -702,31 +702,31 @@ export function GeoPortalApp(): JSX.Element {
                   onClick={closeChrome}
                 />
               )}
-              {!isDesktop && (
+              {isTablet && (
                 <aside
                   className={cn(
-                    "gp-sidebar-panel z-sidebar flex flex-col overflow-hidden bg-background shadow-card",
-                    isTablet &&
-                      "absolute inset-y-0 left-0 w-[min(20rem,85vw)] border-r transition-transform duration-200",
-                    isTablet &&
-                      (overlayOpen
-                        ? "translate-x-0"
-                        : "-translate-x-full pointer-events-none"),
-                    isMobile &&
-                      "absolute inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] h-[min(88dvh,calc(100dvh-4.5rem))] rounded-t-xl border-t transition-transform duration-200",
-                    isMobile &&
-                      (sheetOpen
-                        ? "translate-y-0"
-                        : "translate-y-full pointer-events-none"),
+                    "gp-sidebar-panel absolute inset-y-0 left-0 z-sidebar flex w-[min(20rem,85vw)] flex-col overflow-hidden border-r bg-background shadow-card transition-transform duration-200",
+                    overlayOpen
+                      ? "translate-x-0"
+                      : "-translate-x-full pointer-events-none",
                   )}
-                  aria-hidden={!overlayOpen && !sheetOpen}
+                  aria-hidden={!overlayOpen}
                 >
                   <Sidebar
-                    presentation={isMobile ? "sheet" : "overlay"}
+                    presentation="overlay"
+                    onClose={closeChrome}
+                  />
+                </aside>
+              )}
+              {isMobile && sheetOpen && (
+                <aside
+                  className="gp-sidebar-panel absolute inset-x-0 bottom-0 z-sidebar flex h-[min(88dvh,calc(100%-2.5rem))] flex-col overflow-hidden rounded-t-xl border-t bg-background shadow-card"
+                  aria-label="Panel de capas"
+                >
+                  <Sidebar
+                    presentation="sheet"
                     tab={sidebarTab}
-                    onTabChange={(next) => {
-                      if (isMobile) setMobilePanel(next);
-                    }}
+                    onTabChange={(next) => setMobilePanel(next)}
                     onClose={closeChrome}
                   />
                 </aside>

@@ -39,7 +39,7 @@ export function MobileBottomNav({
 }): JSX.Element {
   return (
     <nav
-      className="z-mobile-nav flex shrink-0 border-t bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md"
+      className="relative z-mobile-nav flex shrink-0 border-t bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md"
       aria-label="Navegación del visor"
     >
       {ITEMS.map((item) => {

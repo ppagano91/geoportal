@@ -2078,7 +2078,7 @@ export function MapViewer({
   );
 
   return (
-    <div className="absolute inset-0 overflow-hidden">
+    <div className="geoportal-map absolute inset-0 z-0 overflow-hidden">
       <div ref={mapContainerRef} className="absolute inset-0 h-full w-full" />
 
       {/* Izquierda: SOLO Dibujo / medición (tablet y desktop) */}
