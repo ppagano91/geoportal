@@ -20,6 +20,9 @@ const EDITABLE_GEOMETRY_TYPES = new Set<EditableGeometryType>([
 	"Point",
 	"LineString",
 	"Polygon",
+	"MultiPoint",
+	"MultiLineString",
+	"MultiPolygon",
 ]);
 
 const RESERVED_FIELD_NAMES = new Set(["id", "type", "geometry", "properties"]);
@@ -57,6 +60,7 @@ export function getEditableLayerById(
 
 export function geometryTypeToDrawMode(
 	type: EditableGeometryType,
+	// Neceisto incluir geomterías multipunto, multilínea y multipolígono
 ): Extract<GeoPortalState["drawMode"], "point" | "line" | "polygon"> {
 	switch (type) {
 		case "Point":
@@ -64,6 +68,13 @@ export function geometryTypeToDrawMode(
 		case "LineString":
 			return "line";
 		case "Polygon":
+			return "polygon";
+		// Revisar si es necesario incluir estas geometrías en el drawMode
+		case "MultiPoint":
+			return "point";
+		case "MultiLineString":
+			return "line";
+		case "MultiPolygon":
 			return "polygon";
 	}
 }

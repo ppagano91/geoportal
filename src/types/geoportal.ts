@@ -51,7 +51,7 @@ export interface LayerField {
 }
 
 /** Tipo geométrico único de una capa editable (sin geometrías mixtas). */
-export type EditableGeometryType = 'Point' | 'LineString' | 'Polygon'
+export type EditableGeometryType = 'Point' | 'LineString' | 'Polygon' | 'MultiPoint' | 'MultiLineString' | 'MultiPolygon'
 
 export interface Layer {
 	id: string
