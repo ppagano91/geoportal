@@ -1,4 +1,8 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ClipboardCopy, Info, Locate, Pencil, Trash2 } from "lucide-react";
+
+const ITEM_CLASS =
+  "flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-muted disabled:pointer-events-none disabled:opacity-50";
 
 export function FeatureContextMenu({
   x,
@@ -9,6 +13,8 @@ export function FeatureContextMenu({
   onEditAttributes,
   onZoom,
   onDelete,
+  onCopyCoordinates,
+  onGetInfo,
 }: {
   x: number;
   y: number;
@@ -16,11 +22,14 @@ export function FeatureContextMenu({
   editAttributesDisabled?: boolean;
   onClose: () => void;
   onEditAttributes?: () => void;
-  onZoom: () => void;
-  onDelete: () => void;
+  onZoom?: () => void;
+  onDelete?: () => void;
+  onCopyCoordinates: () => void;
+  onGetInfo: () => void;
 }): JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
+  const showFeatureActions = !!(onEditAttributes && onZoom && onDelete);
 
   useLayoutEffect(() => {
     const el = menuRef.current;
@@ -36,7 +45,7 @@ export function FeatureContextMenu({
     left = Math.max(8, left);
     top = Math.max(8, top);
     setPos({ left, top });
-  }, [x, y, container]);
+  }, [x, y, container, showFeatureActions]);
 
   useEffect(() => {
     function onPointerDown(event: MouseEvent) {
@@ -59,36 +68,61 @@ export function FeatureContextMenu({
     <div
       ref={menuRef}
       role="menu"
-      className="surface absolute z-[1100] min-w-[11.5rem] overflow-hidden rounded-md border py-1 text-sm shadow-md"
+      className="surface absolute z-[1100] min-w-[12.5rem] overflow-hidden rounded-md border py-1 text-sm shadow-md"
       style={{ left: pos.left, top: pos.top }}
       onContextMenu={(event) => event.preventDefault()}
     >
+      {showFeatureActions && (
+        <>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={editAttributesDisabled}
+            title="Editar atributos"
+            className={ITEM_CLASS}
+            onClick={onEditAttributes}
+          >
+            <Pencil className="h-3.5 w-3.5 shrink-0 opacity-70" />
+            Editar atributos
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={ITEM_CLASS}
+            onClick={onZoom}
+          >
+            <Locate className="h-3.5 w-3.5 shrink-0 opacity-70" />
+            Zoom a entidad
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={`${ITEM_CLASS} text-destructive`}
+            onClick={onDelete}
+          >
+            <Trash2 className="h-3.5 w-3.5 shrink-0 opacity-70" />
+            Eliminar
+          </button>
+          <div className="my-1 border-t" />
+        </>
+      )}
       <button
         type="button"
         role="menuitem"
-        disabled={editAttributesDisabled}
-        title="Editar atributos"
-        className="flex w-full px-3 py-1.5 text-left hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
-        onClick={onEditAttributes}
+        className={ITEM_CLASS}
+        onClick={onCopyCoordinates}
       >
-        Editar atributos
+        <ClipboardCopy className="h-3.5 w-3.5 shrink-0 opacity-70" />
+        Copiar coordenadas
       </button>
       <button
         type="button"
         role="menuitem"
-        className="flex w-full px-3 py-1.5 text-left hover:bg-muted"
-        onClick={onZoom}
+        className={ITEM_CLASS}
+        onClick={onGetInfo}
       >
-        Zoom a entidad
-      </button>
-      <div className="my-1 border-t" />
-      <button
-        type="button"
-        role="menuitem"
-        className="flex w-full px-3 py-1.5 text-left text-destructive hover:bg-muted"
-        onClick={onDelete}
-      >
-        Eliminar
+        <Info className="h-3.5 w-3.5 shrink-0 opacity-70" />
+        Obtener información
       </button>
     </div>
   );

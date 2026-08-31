@@ -3,97 +3,18 @@ import { ChevronDown, Search, X } from 'lucide-react'
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/Dialog'
 import { Input } from '../ui/Input'
 import { Button } from '../ui/Button'
+import {
+	WmsQueryError,
+	isNetworkFailure,
+	parseWmsCapabilitiesXml,
+	type WmsLayerOption,
+} from '../../utils/wms'
 
-type WmsLayerOption = { name: string; title: string }
-
-class WmsQueryError extends Error {
-	constructor(message: string) {
-		super(message)
-		this.name = 'WmsQueryError'
-	}
-}
-
-function directChildText(el: Element, localName: string): string {
-	for (const child of Array.from(el.children)) {
-		if (child.localName === localName) {
-			return (child.textContent ?? '').trim()
-		}
-	}
-	return ''
-}
-
-function collectSelectableLayers(el: Element, byName: Map<string, WmsLayerOption>): void {
-	if (el.localName === 'Layer') {
-		const name = directChildText(el, 'Name')
-		if (name) {
-			if (!byName.has(name)) {
-				byName.set(name, { name, title: directChildText(el, 'Title') || name })
-			}
-		}
-	}
-	for (const child of Array.from(el.children)) {
-		collectSelectableLayers(child, byName)
-	}
-}
-
-function hasParserError(xml: Document): boolean {
-	if (xml.documentElement?.localName === 'parsererror') return true
-	return xml.getElementsByTagName('parsererror').length > 0
-}
-
-function firstByLocalName(xml: Document, localName: string): Element | undefined {
-	const all = xml.getElementsByTagName('*')
-	for (const el of Array.from(all)) {
-		if (el.localName === localName) return el
-	}
-	return undefined
-}
-
-function sanitizeExceptionMessage(raw: string): string {
-	const text = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-	if (text.length > 240) return `${text.slice(0, 237)}...`
-	return text
-}
-
-function extractOgcExceptionMessage(xml: Document): string | null {
-	const rootName = xml.documentElement?.localName ?? ''
-	const isExceptionDocument =
-		rootName === 'ServiceExceptionReport' ||
-		rootName === 'ExceptionReport' ||
-		firstByLocalName(xml, 'ServiceException') != null ||
-		firstByLocalName(xml, 'ExceptionReport') != null
-
-	if (!isExceptionDocument) return null
-
-	const raw =
-		firstByLocalName(xml, 'ServiceException')?.textContent ??
-		firstByLocalName(xml, 'ExceptionText')?.textContent ??
-		firstByLocalName(xml, 'Exception')?.getAttribute('exceptionCode') ??
-		''
-	const message = sanitizeExceptionMessage(raw)
-	if (message) return `El servicio WMS respondió con un error: ${message}`
-	return 'El servicio WMS respondió con un error.'
-}
-
-function isNetworkFailure(err: unknown): boolean {
-	if (!(err instanceof Error)) return false
-	if (err.name === 'TypeError' || err.name === 'NetworkError') return true
-	const msg = err.message.toLowerCase()
-	return msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('cors')
-}
-
-function parseCapabilitiesXml(txt: string): WmsLayerOption[] {
-	const xml = new window.DOMParser().parseFromString(txt, 'text/xml')
-	if (hasParserError(xml) || !xml.documentElement) {
-		throw new WmsQueryError('La respuesta del servidor no es un documento WMS GetCapabilities válido.')
-	}
-
-	const ogcError = extractOgcExceptionMessage(xml)
-	if (ogcError) throw new WmsQueryError(ogcError)
-
-	const byName = new Map<string, WmsLayerOption>()
-	collectSelectableLayers(xml.documentElement, byName)
-	return Array.from(byName.values())
+export type WmsAddPayload = {
+	url: string
+	version: string
+	infoFormats: string[]
+	layers: WmsLayerOption[]
 }
 
 export function WmsDialog({
@@ -103,7 +24,7 @@ export function WmsDialog({
 }: {
 	open: boolean
 	onOpenChange: (open: boolean) => void
-	onAdd: (url: string, layerNames: string[]) => void
+	onAdd: (payload: WmsAddPayload) => void
 }): JSX.Element | null {
 	const [url, setUrl] = React.useState('')
 	const [discovering, setDiscovering] = React.useState(false)
@@ -112,6 +33,8 @@ export function WmsDialog({
 	const [wmsError, setWmsError] = React.useState<string | null>(null)
 	const [queried, setQueried] = React.useState(false)
 	const [layerMenuOpen, setLayerMenuOpen] = React.useState(false)
+	const [capsVersion, setCapsVersion] = React.useState('')
+	const [infoFormats, setInfoFormats] = React.useState<string[]>([])
 	const requestIdRef = React.useRef(0)
 	const layerMenuRef = React.useRef<HTMLDivElement>(null)
 
@@ -124,6 +47,8 @@ export function WmsDialog({
 		setSelected({})
 		setQueried(false)
 		setLayerMenuOpen(false)
+		setCapsVersion('')
+		setInfoFormats([])
 	}
 
 	React.useEffect(() => {
@@ -167,6 +92,8 @@ export function WmsDialog({
 		setLayerMenuOpen(false)
 		setWmsError(null)
 		setAvailable([])
+		setCapsVersion('')
+		setInfoFormats([])
 		setSelected({})
 		setQueried(false)
 		try {
@@ -181,8 +108,10 @@ export function WmsDialog({
 			}
 			const txt = await res.text()
 			if (requestId !== requestIdRef.current) return
-			const items = parseCapabilitiesXml(txt)
-			setAvailable(items)
+			const caps = parseWmsCapabilitiesXml(txt)
+			setAvailable(caps.layers)
+			setCapsVersion(caps.version)
+			setInfoFormats(caps.infoFormats)
 			setSelected({})
 			setQueried(true)
 			setWmsError(null)
@@ -190,6 +119,8 @@ export function WmsDialog({
 			if (requestId !== requestIdRef.current) return
 			console.error(err)
 			setAvailable([])
+			setCapsVersion('')
+			setInfoFormats([])
 			setSelected({})
 			setQueried(false)
 			if (err instanceof WmsQueryError) {
@@ -207,9 +138,14 @@ export function WmsDialog({
 	}
 
 	function addSelected() {
-		const names = available.filter(a => selected[a.name]).map(a => a.name)
-		if (!url || names.length === 0) return
-		onAdd(url, names)
+		const layers = available.filter(a => selected[a.name])
+		if (!url || layers.length === 0) return
+		onAdd({
+			url,
+			version: capsVersion,
+			infoFormats,
+			layers,
+		})
 		onOpenChange(false)
 	}
 

@@ -599,16 +599,19 @@ export function GeoPortalApp(): JSX.Element {
                 onOpenChange={(o) =>
                   dispatch({ type: o ? "openWmsDialog" : "closeWmsDialog" })
                 }
-                onAdd={(url, names) => {
-                  for (const nm of names) {
+                onAdd={({ url, version, infoFormats, layers }) => {
+                  for (const item of layers) {
                     const id = crypto.randomUUID();
                     const layer: Layer = {
                       id,
-                      name: nm,
+                      name: item.name,
                       type: "wms",
                       visible: true,
                       wmsUrl: url,
-                      wmsLayers: nm,
+                      wmsLayers: item.name,
+                      wmsVersion: version || undefined,
+                      wmsQueryable: item.queryable,
+                      wmsInfoFormats: infoFormats,
                     };
                     dispatch({ type: "addLayer", layer });
                   }

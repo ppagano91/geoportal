@@ -67,6 +67,12 @@ export interface Layer {
 	stats?: LayerStats
 	wmsUrl?: string
 	wmsLayers?: string
+	/** Versión WMS negociada en GetCapabilities, p.ej. `"1.3.0"` o `"1.1.1"`. */
+	wmsVersion?: string
+	/** True si la capa anuncia `queryable` (con herencia de layers padre). */
+	wmsQueryable?: boolean
+	/** Formatos de GetFeatureInfo anunciados por el servicio. */
+	wmsInfoFormats?: string[]
 	/** URL base del servicio WFS (sin GetFeature). */
 	wfsUrl?: string
 	/** FeatureType técnico (`Name` de GetCapabilities). */
@@ -99,6 +105,29 @@ export type WfsLayer = Layer & {
 	wfsUrl: string
 	wfsTypeName: string
 	data: GeoJSON.FeatureCollection
+}
+
+/** Capa WMS raster. La consulta de atributos usa GetFeatureInfo, no queryRenderedFeatures. */
+export type WmsLayer = Layer & {
+	type: 'wms'
+	wmsUrl: string
+	wmsLayers: string
+}
+
+export type FeatureInfoLayerType = 'wms' | 'wfs' | 'editable'
+
+export type FeatureInfoFeature = {
+	id?: string | number
+	properties?: Record<string, unknown>
+	text?: string
+}
+
+export type FeatureInfoResult = {
+	layerId: string
+	layerName: string
+	layerType: FeatureInfoLayerType
+	features: FeatureInfoFeature[]
+	error?: string
 }
 
 export type BaseMapStyle = 'streets' | 'satellite' | 'topo' | 'dark'

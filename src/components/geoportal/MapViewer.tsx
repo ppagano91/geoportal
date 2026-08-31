@@ -17,6 +17,7 @@ import "@watergis/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css";
 import { GeoPortalContext, type DrawEngine, type MeasureEngine } from "../../shell/GeoPortalApp";
 import { BaseMapControl } from "./BaseMapControl";
 import { FeatureContextMenu } from "./FeatureContextMenu";
+import { FeatureInfoDialog } from "./FeatureInfoDialog";
 import {
   Dialog,
   DialogDescription,
@@ -25,7 +26,7 @@ import {
   DialogTitle,
 } from "../ui/Dialog";
 import { Button } from "../ui/Button";
-import type { EditableLayer, Layer } from "../../types/geoportal";
+import type { EditableLayer, FeatureInfoResult, Layer } from "../../types/geoportal";
 import { MiniMap } from "./MiniMap";
 import { MapControls } from "./MapControls";
 import { env } from "../../config/env";
@@ -55,6 +56,16 @@ import {
   isEditableLayer,
 } from "../../persistence/editableLayers";
 import { distanceToFeaturePx, zoomToFeature } from "../../utils/geo";
+import {
+  copyTextToClipboard,
+  formatLngLat,
+  mergeFeatureInfoResults,
+  queryVectorFeatureInfo,
+} from "../../utils/featureInfo";
+import {
+  fetchWmsFeatureInfo,
+  isQueryableWmsLayer,
+} from "../../utils/wms";
 
 // import MapboxDraw from "@mapbox/mapbox-gl-draw";
 
@@ -1032,12 +1043,23 @@ export function MapViewer(): JSX.Element {
   const featureAttributesOpenRef = useRef(!!state.featureAttributesOpen);
   const attributeTableLayerIdRef = useRef(state.attributeTableLayerId);
   const selectedHighlightRef = useRef<GeoJSON.Feature | null>(null);
-  const [featureMenu, setFeatureMenu] = useState<{
-    layerId: string;
-    featureId: string | number;
+  const [mapContextMenu, setMapContextMenu] = useState<{
     x: number;
     y: number;
+    lng: number;
+    lat: number;
+    editable?: { layerId: string; featureId: string | number };
   } | null>(null);
+  const [featureInfo, setFeatureInfo] = useState<{
+    lng: number;
+    lat: number;
+    loading: boolean;
+    results: FeatureInfoResult[];
+    wmsFailureCount: number;
+  } | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const featureInfoGenRef = useRef(0);
+  const featureInfoAbortRef = useRef<AbortController | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{
     layerId: string;
     featureId: string | number;
@@ -1194,7 +1216,8 @@ export function MapViewer(): JSX.Element {
     (window as any).maplibreglMap = map;
     mapRef.current = map;
 
-    const handleFeatureContextMenu = (point: { x: number; y: number }) => {
+    const handleMapContextMenu = (point: { x: number; y: number }) => {
+      const lngLat = map.unproject([point.x, point.y]);
       const editableHit = findEditableFeatureAtPoint(
         map,
         point,
@@ -1202,14 +1225,24 @@ export function MapViewer(): JSX.Element {
         editingLayerIdRef.current,
       );
       if (editableHit?.feature.id == null) {
-        setFeatureMenu(null);
+        dispatch({ type: "setSelectedFeature", id: undefined });
+        setMapContextMenu({
+          x: point.x,
+          y: point.y,
+          lng: lngLat.lng,
+          lat: lngLat.lat,
+        });
         return;
       }
-      setFeatureMenu({
-        layerId: editableHit.layer.id,
-        featureId: editableHit.feature.id,
+      setMapContextMenu({
         x: point.x,
         y: point.y,
+        lng: lngLat.lng,
+        lat: lngLat.lat,
+        editable: {
+          layerId: editableHit.layer.id,
+          featureId: editableHit.feature.id,
+        },
       });
       dispatch({
         type: "setSelectedFeature",
@@ -1230,7 +1263,7 @@ export function MapViewer(): JSX.Element {
       const rect = canvas.getBoundingClientRect();
       const x = ev.clientX - rect.left;
       const y = ev.clientY - rect.top;
-      handleFeatureContextMenu({ x, y });
+      handleMapContextMenu({ x, y });
     };
     const rightClickGuardOpts: AddEventListenerOptions = { capture: true };
     const removeRightClickGuard = () => {
@@ -1867,20 +1900,112 @@ export function MapViewer(): JSX.Element {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !featureMenu) return;
+    if (!map || !mapContextMenu) return;
     const closeMenu = () => {
-      setFeatureMenu(null);
+      setMapContextMenu(null);
       dispatch({ type: "setSelectedFeature", id: undefined });
     };
     map.on("movestart", closeMenu);
     return () => {
       map.off("movestart", closeMenu);
     };
-  }, [dispatch, featureMenu]);
+  }, [dispatch, mapContextMenu]);
 
   const contextMenuFeature = featureFromEditableLayer(
-    getEditableLayerById(state.layers, featureMenu?.layerId),
-    featureMenu?.featureId,
+    getEditableLayerById(state.layers, mapContextMenu?.editable?.layerId),
+    mapContextMenu?.editable?.featureId,
+  );
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timeout = window.setTimeout(() => setToastMessage(null), 2000);
+    return () => window.clearTimeout(timeout);
+  }, [toastMessage]);
+
+  useEffect(() => {
+    return () => {
+      featureInfoGenRef.current += 1;
+      featureInfoAbortRef.current?.abort();
+    };
+  }, []);
+
+  const handleCopyCoordinates = useCallback(async (lng: number, lat: number) => {
+    const ok = await copyTextToClipboard(formatLngLat(lng, lat));
+    setToastMessage(ok ? "Coordenadas copiadas" : "No se pudieron copiar las coordenadas");
+  }, []);
+
+  const closeFeatureInfo = useCallback(() => {
+    featureInfoGenRef.current += 1;
+    featureInfoAbortRef.current?.abort();
+    setFeatureInfo(null);
+  }, []);
+
+  const handleGetInfo = useCallback(
+    async (point: { x: number; y: number }, lng: number, lat: number) => {
+      const map = mapRef.current;
+      if (!map) return;
+      featureInfoAbortRef.current?.abort();
+      const controller = new AbortController();
+      featureInfoAbortRef.current = controller;
+      const generation = ++featureInfoGenRef.current;
+      setMapContextMenu(null);
+      setFeatureInfo({
+        lng,
+        lat,
+        loading: true,
+        results: [],
+        wmsFailureCount: 0,
+      });
+
+      const vectorResults = queryVectorFeatureInfo(
+        map,
+        point,
+        layersRef.current,
+        editingLayerIdRef.current,
+      );
+      const wmsLayers = layersRef.current.filter(isQueryableWmsLayer);
+      const settled = await Promise.allSettled(
+        wmsLayers.map((layer) =>
+          fetchWmsFeatureInfo(layer, map, point, controller.signal),
+        ),
+      );
+      if (generation !== featureInfoGenRef.current || controller.signal.aborted) {
+        return;
+      }
+
+      const wmsResults: FeatureInfoResult[] = [];
+      let wmsFailureCount = 0;
+      settled.forEach((item, index) => {
+        const layer = wmsLayers[index];
+        if (item.status === "fulfilled") {
+          if (item.value.length === 0) return;
+          wmsResults.push({
+            layerId: layer.id,
+            layerName: layer.name,
+            layerType: "wms",
+            features: item.value,
+          });
+          return;
+        }
+        if (item.reason instanceof DOMException && item.reason.name === "AbortError") {
+          return;
+        }
+        wmsFailureCount += 1;
+      });
+
+      setFeatureInfo({
+        lng,
+        lat,
+        loading: false,
+        results: mergeFeatureInfoResults(
+          layersRef.current,
+          vectorResults,
+          wmsResults,
+        ),
+        wmsFailureCount,
+      });
+    },
+    [mapRef],
   );
 
   return (
@@ -2032,37 +2157,82 @@ export function MapViewer(): JSX.Element {
       <div className="absolute bottom-3 right-3 z-10">
         <MiniMap styleUrl={styleUrl} />
       </div>
-      {featureMenu && contextMenuFeature && mapContainerRef.current && (
+      {mapContextMenu && mapContainerRef.current && (
         <FeatureContextMenu
-          x={featureMenu.x}
-          y={featureMenu.y}
+          x={mapContextMenu.x}
+          y={mapContextMenu.y}
           container={mapContainerRef.current}
           onClose={() => {
-            setFeatureMenu(null);
+            setMapContextMenu(null);
             dispatch({ type: "setSelectedFeature", id: undefined });
           }}
-          onEditAttributes={() => {
-            dispatch({
-              type: "openFeatureAttributes",
-              layerId: featureMenu.layerId,
-              featureId: featureMenu.featureId,
-            });
-            setFeatureMenu(null);
+          onEditAttributes={
+            mapContextMenu.editable && contextMenuFeature
+              ? () => {
+                  dispatch({
+                    type: "openFeatureAttributes",
+                    layerId: mapContextMenu.editable!.layerId,
+                    featureId: mapContextMenu.editable!.featureId,
+                  });
+                  setMapContextMenu(null);
+                }
+              : undefined
+          }
+          onZoom={
+            mapContextMenu.editable && contextMenuFeature
+              ? () => {
+                  const map = mapRef.current;
+                  if (map) zoomToFeature(map, contextMenuFeature);
+                  setMapContextMenu(null);
+                  dispatch({ type: "setSelectedFeature", id: undefined });
+                }
+              : undefined
+          }
+          onDelete={
+            mapContextMenu.editable && contextMenuFeature
+              ? () => {
+                  setPendingDelete({
+                    layerId: mapContextMenu.editable!.layerId,
+                    featureId: mapContextMenu.editable!.featureId,
+                  });
+                  setMapContextMenu(null);
+                }
+              : undefined
+          }
+          onCopyCoordinates={() => {
+            void handleCopyCoordinates(mapContextMenu.lng, mapContextMenu.lat);
+            setMapContextMenu(null);
           }}
-          onZoom={() => {
-            const map = mapRef.current;
-            if (map) zoomToFeature(map, contextMenuFeature);
-            setFeatureMenu(null);
-            dispatch({ type: "setSelectedFeature", id: undefined });
-          }}
-          onDelete={() => {
-            setPendingDelete({
-              layerId: featureMenu.layerId,
-              featureId: featureMenu.featureId,
-            });
-            setFeatureMenu(null);
+          onGetInfo={() => {
+            void handleGetInfo(
+              { x: mapContextMenu.x, y: mapContextMenu.y },
+              mapContextMenu.lng,
+              mapContextMenu.lat,
+            );
           }}
         />
+      )}
+      {featureInfo && (
+        <FeatureInfoDialog
+          open
+          lng={featureInfo.lng}
+          lat={featureInfo.lat}
+          loading={featureInfo.loading}
+          results={featureInfo.results}
+          wmsFailureCount={featureInfo.wmsFailureCount}
+          onClose={closeFeatureInfo}
+          onCopyCoordinates={() => {
+            void handleCopyCoordinates(featureInfo.lng, featureInfo.lat);
+          }}
+        />
+      )}
+      {toastMessage && (
+        <div
+          role="status"
+          className="pointer-events-none fixed bottom-16 left-1/2 z-[1300] -translate-x-1/2 rounded-md border bg-card px-3 py-1.5 text-sm shadow-md"
+        >
+          {toastMessage}
+        </div>
       )}
       <Dialog
         open={!!pendingDelete}
