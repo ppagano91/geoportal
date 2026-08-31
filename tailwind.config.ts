@@ -4,7 +4,25 @@ export default {
 	content: ['./index.html', './src/**/*.{ts,tsx}'],
 	darkMode: ['class'],
 	theme: {
+		screens: {
+			sm: '640px',
+			md: '768px',
+			tablet: '768px',
+			lg: '1024px',
+			desktop: '1024px',
+			xl: '1280px',
+			'2xl': '1536px'
+		},
 		extend: {
+			zIndex: {
+				'map-controls': '20',
+				'mobile-nav': '30',
+				sidebar: '40',
+				header: '50',
+				'action-sheet': '55',
+				modal: '60',
+				toast: '70'
+			},
 			colors: {
 				background: 'hsl(var(--background))',
 				foreground: 'hsl(var(--foreground))',

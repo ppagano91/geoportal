@@ -1,14 +1,18 @@
-import React, { useEffect, useMemo, useReducer, useRef } from "react";
+import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { GeoPortalState, Layer } from "../types/geoportal";
+import type { MobilePanel } from "../config/breakpoints";
 import { Header } from "../components/geoportal/Header";
-import { Sidebar } from "../components/geoportal/Sidebar";
+import { Sidebar, type SidebarTab } from "../components/geoportal/Sidebar";
 import { MapViewer } from "../components/geoportal/MapViewer";
 import { WmsDialog } from "../components/geoportal/WmsDialog";
 import { WfsDialog } from "../components/geoportal/WfsDialog";
 import { LayerSettingsDialog } from "../components/geoportal/LayerSettingsDialog";
 import { FeatureAttributesDialog } from "../components/geoportal/FeatureAttributesDialog";
 import { AttributeTable } from "../components/geoportal/AttributeTable";
+import { MobileBottomNav } from "../components/geoportal/MobileBottomNav";
+import { useResponsive } from "../hooks/useResponsive";
+import { cn } from "../utils/cn";
 import {
   DRAWING_SESSION_LAYER_ID,
   createDrawingLayer,
@@ -35,6 +39,7 @@ import { fetchWfsFeatures } from "../utils/wfs";
 
 type Action =
   | { type: "toggleSidebar" }
+  | { type: "setSidebarOpen"; open: boolean }
   | { type: "setSearch"; query: string }
   | { type: "setTheme"; theme: "light" | "dark" }
   | { type: "setBaseMap"; baseMap: GeoPortalState["baseMap"] }
@@ -155,6 +160,9 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
   switch (action.type) {
     case "toggleSidebar":
       return { ...state, sidebarOpen: !state.sidebarOpen };
+    case "setSidebarOpen":
+      if (state.sidebarOpen === action.open) return state;
+      return { ...state, sidebarOpen: action.open };
     case "setSearch":
       return { ...state, searchQuery: action.query };
     case "setTheme": {
@@ -497,6 +505,8 @@ export const GeoPortalContext = React.createContext<{
 } | null>(null);
 
 export function GeoPortalApp(): JSX.Element {
+  const { mode, isMobile, isTablet, isDesktop } = useResponsive();
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [state, dispatch] = useReducer(reducer, initialState, (s): GeoPortalState => {
     const savedTheme =
       (localStorage.getItem("geoportal:theme") as "light" | "dark" | null) ??
@@ -566,6 +576,27 @@ export function GeoPortalApp(): JSX.Element {
     };
   }, []);
 
+  useEffect(() => {
+    setMobilePanel(null);
+    dispatch({ type: "setSidebarOpen", open: isDesktop });
+    if (isMobile) {
+      dispatch({ type: "stopEditingLayer" });
+      dispatch({ type: "closeFeatureAttributes" });
+    }
+  }, [mode, isDesktop, isMobile]);
+
+  useEffect(() => {
+    const lock =
+      isMobile &&
+      (mobilePanel === "layers" ||
+        mobilePanel === "wms" ||
+        mobilePanel === "wfs");
+    document.body.classList.toggle("gp-scroll-lock", lock);
+    return () => {
+      document.body.classList.remove("gp-scroll-lock");
+    };
+  }, [isMobile, mobilePanel]);
+
   const drawEngineRef = useRef<DrawEngine | null>(null);
   const measureEngineRef = useRef<MeasureEngine | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -574,64 +605,148 @@ export function GeoPortalApp(): JSX.Element {
     [state],
   );
 
+  const sheetOpen =
+    isMobile &&
+    (mobilePanel === "layers" ||
+      mobilePanel === "wms" ||
+      mobilePanel === "wfs");
+  const overlayOpen = isTablet && state.sidebarOpen;
+  const sidebarTab: SidebarTab | undefined =
+    mobilePanel === "layers" || mobilePanel === "wms" || mobilePanel === "wfs"
+      ? mobilePanel
+      : undefined;
+
+  function closeChrome() {
+    setMobilePanel(null);
+    if (!isDesktop) {
+      dispatch({ type: "setSidebarOpen", open: false });
+    }
+  }
+
+  const dialogs = (
+    <>
+      <LayerSettingsDialog />
+      <FeatureAttributesDialog />
+      <WmsDialog
+        open={state.wmsDialogOpen}
+        onOpenChange={(o) =>
+          dispatch({ type: o ? "openWmsDialog" : "closeWmsDialog" })
+        }
+        onAdd={({ url, version, infoFormats, layers }) => {
+          for (const item of layers) {
+            const id = crypto.randomUUID();
+            const layer: Layer = {
+              id,
+              name: item.name,
+              type: "wms",
+              visible: true,
+              wmsUrl: url,
+              wmsLayers: item.name,
+              wmsVersion: version || undefined,
+              wmsQueryable: item.queryable,
+              wmsInfoFormats: infoFormats,
+            };
+            dispatch({ type: "addLayer", layer });
+          }
+          dispatch({ type: "closeWmsDialog" });
+        }}
+      />
+      <WfsDialog
+        open={state.wfsDialogOpen}
+        onOpenChange={(o) =>
+          dispatch({ type: o ? "openWfsDialog" : "closeWfsDialog" })
+        }
+        onAdd={(layers) => {
+          for (const layer of layers) {
+            dispatch({ type: "addLayer", layer });
+          }
+        }}
+      />
+    </>
+  );
+
   return (
     <GeoPortalContext.Provider value={ctx}>
       <div
-        className="h-full w-full grid"
-        style={{
-          gridTemplateColumns: state.sidebarOpen ? "320px 1fr" : "0 1fr",
-        }}
+        className="flex h-full max-h-dvh w-full overflow-hidden"
+        data-mode={mode}
       >
-        <aside
-          className={`relative h-full overflow-hidden border-r ${state.sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
-        >
-          <Sidebar />
-        </aside>
-        <main className="h-full flex flex-col">
+        {isDesktop && (
+          <aside
+            className={cn(
+              "gp-sidebar-panel relative h-full shrink-0 overflow-hidden border-r bg-background transition-[width,opacity] duration-200",
+              state.sidebarOpen
+                ? "w-80 opacity-100"
+                : "w-0 opacity-0 pointer-events-none",
+            )}
+          >
+            <Sidebar presentation="docked" />
+          </aside>
+        )}
+        <main className="flex h-full min-w-0 flex-1 flex-col">
           <Header />
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div className="relative flex min-h-0 flex-1 flex-col">
             <div className="relative min-h-0 flex-1">
-              <MapViewer />
-              <LayerSettingsDialog />
-              <FeatureAttributesDialog />
-              <WmsDialog
-                open={state.wmsDialogOpen}
-                onOpenChange={(o) =>
-                  dispatch({ type: o ? "openWmsDialog" : "closeWmsDialog" })
+              <MapViewer
+                moreToolsOpen={isMobile && mobilePanel === "more"}
+                onMoreToolsOpenChange={(open) =>
+                  setMobilePanel(open ? "more" : null)
                 }
-                onAdd={({ url, version, infoFormats, layers }) => {
-                  for (const item of layers) {
-                    const id = crypto.randomUUID();
-                    const layer: Layer = {
-                      id,
-                      name: item.name,
-                      type: "wms",
-                      visible: true,
-                      wmsUrl: url,
-                      wmsLayers: item.name,
-                      wmsVersion: version || undefined,
-                      wmsQueryable: item.queryable,
-                      wmsInfoFormats: infoFormats,
-                    };
-                    dispatch({ type: "addLayer", layer });
-                  }
-                  dispatch({ type: "closeWmsDialog" });
-                }}
               />
-              <WfsDialog
-                open={state.wfsDialogOpen}
-                onOpenChange={(o) =>
-                  dispatch({ type: o ? "openWfsDialog" : "closeWfsDialog" })
-                }
-                onAdd={(layers) => {
-                  for (const layer of layers) {
-                    dispatch({ type: "addLayer", layer });
-                  }
-                }}
-              />
+              {dialogs}
+              {(overlayOpen || sheetOpen) && (
+                <button
+                  type="button"
+                  aria-label="Cerrar panel"
+                  className="absolute inset-0 z-sidebar bg-black/35"
+                  onClick={closeChrome}
+                />
+              )}
+              {!isDesktop && (
+                <aside
+                  className={cn(
+                    "gp-sidebar-panel z-sidebar flex flex-col overflow-hidden bg-background shadow-card",
+                    isTablet &&
+                      "absolute inset-y-0 left-0 w-[min(20rem,85vw)] border-r transition-transform duration-200",
+                    isTablet &&
+                      (overlayOpen
+                        ? "translate-x-0"
+                        : "-translate-x-full pointer-events-none"),
+                    isMobile &&
+                      "absolute inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] h-[min(88dvh,calc(100dvh-4.5rem))] rounded-t-xl border-t transition-transform duration-200",
+                    isMobile &&
+                      (sheetOpen
+                        ? "translate-y-0"
+                        : "translate-y-full pointer-events-none"),
+                  )}
+                  aria-hidden={!overlayOpen && !sheetOpen}
+                >
+                  <Sidebar
+                    presentation={isMobile ? "sheet" : "overlay"}
+                    tab={sidebarTab}
+                    onTabChange={(next) => {
+                      if (isMobile) setMobilePanel(next);
+                    }}
+                    onClose={closeChrome}
+                  />
+                </aside>
+              )}
             </div>
             <AttributeTable />
           </div>
+          {isMobile && (
+            <MobileBottomNav
+              active={mobilePanel}
+              onChange={(panel) => {
+                setMobilePanel(panel);
+                if (panel && panel !== "more") {
+                  dispatch({ type: "setSidebarOpen", open: true });
+                } else {
+                  dispatch({ type: "setSidebarOpen", open: false });
+                }
+              }}
+            />
+          )}
         </main>
       </div>
     </GeoPortalContext.Provider>

@@ -18,6 +18,8 @@ import { GeoPortalContext, type DrawEngine, type MeasureEngine } from "../../she
 import { BaseMapControl } from "./BaseMapControl";
 import { FeatureContextMenu } from "./FeatureContextMenu";
 import { FeatureInfoDialog } from "./FeatureInfoDialog";
+import { MapActionSheet } from "./MapActionSheet";
+import { MobileMoreSheet } from "./MobileMoreSheet";
 import {
   Dialog,
   DialogDescription,
@@ -30,6 +32,7 @@ import type { EditableLayer, FeatureInfoResult, Layer } from "../../types/geopor
 import { MiniMap } from "./MiniMap";
 import { MapControls } from "./MapControls";
 import { env } from "../../config/env";
+import { useResponsive } from "../../hooks/useResponsive";
 import buildingsIcon from "../../assets/images/buildings.svg";
 import reliefIcon from "../../assets/images/relief.svg";
 import {
@@ -1027,9 +1030,18 @@ function findEditableFeatureAtPoint(
   return null;
 }
 
-export function MapViewer(): JSX.Element {
+export function MapViewer({
+  moreToolsOpen = false,
+  onMoreToolsOpenChange,
+}: {
+  moreToolsOpen?: boolean;
+  onMoreToolsOpenChange?: (open: boolean) => void;
+}): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
   const { state, dispatch, drawEngineRef, measureEngineRef, mapRef } = ctx;
+  const { mode, isMobile } = useResponsive();
+  const isMobileRef = useRef(isMobile);
+  isMobileRef.current = isMobile;
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const drawControlRef = useRef<MaplibreTerradrawControl | null>(null);
   const measureControlRef = useRef<MaplibreMeasureControl | null>(null);
@@ -1049,6 +1061,12 @@ export function MapViewer(): JSX.Element {
     lng: number;
     lat: number;
     editable?: { layerId: string; featureId: string | number };
+  } | null>(null);
+  const [mapActionSheet, setMapActionSheet] = useState<{
+    x: number;
+    y: number;
+    lng: number;
+    lat: number;
   } | null>(null);
   const [featureInfo, setFeatureInfo] = useState<{
     lng: number;
@@ -1217,6 +1235,7 @@ export function MapViewer(): JSX.Element {
     mapRef.current = map;
 
     const handleMapContextMenu = (point: { x: number; y: number }) => {
+      if (isMobileRef.current) return;
       const lngLat = map.unproject([point.x, point.y]);
       const editableHit = findEditableFeatureAtPoint(
         map,
@@ -1294,23 +1313,37 @@ export function MapViewer(): JSX.Element {
 
     const onMapClick = (event: maplibregl.MapMouseEvent) => {
       const tableLayerId = attributeTableLayerIdRef.current;
-      if (!tableLayerId) return;
-      const mode = drawModeRef.current;
-      if (mode !== "none" && mode !== "select") return;
-      if (measureModeRef.current !== "none") return;
-      const hit = findEditableFeatureAtPoint(
-        map,
-        event.point,
-        layersRef.current,
-        editingLayerIdRef.current,
-      );
-      if (!hit || hit.layer.id !== tableLayerId || hit.feature.id == null) {
-        return;
+      if (tableLayerId) {
+        const modeNow = drawModeRef.current;
+        if (
+          (modeNow === "none" || modeNow === "select") &&
+          measureModeRef.current === "none"
+        ) {
+          const hit = findEditableFeatureAtPoint(
+            map,
+            event.point,
+            layersRef.current,
+            editingLayerIdRef.current,
+          );
+          if (hit && hit.layer.id === tableLayerId && hit.feature.id != null) {
+            dispatch({
+              type: "setSelectedFeature",
+              id: hit.feature.id,
+              layerId: hit.layer.id,
+            });
+          }
+        }
       }
-      dispatch({
-        type: "setSelectedFeature",
-        id: hit.feature.id,
-        layerId: hit.layer.id,
+      if (!isMobileRef.current) return;
+      if (measureModeRef.current !== "none") return;
+      const drawMode = drawModeRef.current;
+      if (drawMode !== "none" && drawMode !== "select") return;
+      setMapContextMenu(null);
+      setMapActionSheet({
+        x: event.point.x,
+        y: event.point.y,
+        lng: event.lngLat.lng,
+        lat: event.lngLat.lat,
       });
     };
     map.on("click", onMapClick);
@@ -1576,6 +1609,7 @@ export function MapViewer(): JSX.Element {
       } catch {}
     };
     window.addEventListener("resize", onWinResize);
+    window.addEventListener("orientationchange", onWinResize);
     setTimeout(() => {
       try {
         map.resize();
@@ -1704,6 +1738,7 @@ export function MapViewer(): JSX.Element {
         ro.disconnect();
       } catch {}
       window.removeEventListener("resize", onWinResize);
+      window.removeEventListener("orientationchange", onWinResize);
       mapRef.current = null;
       (window as any).maplibreglMap = null;
     };
@@ -1911,6 +1946,40 @@ export function MapViewer(): JSX.Element {
     };
   }, [dispatch, mapContextMenu]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapActionSheet) return;
+    const closeSheet = () => setMapActionSheet(null);
+    map.on("movestart", closeSheet);
+    return () => {
+      map.off("movestart", closeSheet);
+    };
+  }, [mapActionSheet]);
+
+  useEffect(() => {
+    if (!isMobile) {
+      setMapActionSheet(null);
+      return;
+    }
+    setMapContextMenu(null);
+  }, [isMobile]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const resize = () => {
+      try {
+        map.resize();
+      } catch {}
+    };
+    const frame = window.requestAnimationFrame(resize);
+    const timeout = window.setTimeout(resize, 220);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timeout);
+    };
+  }, [mode, state.sidebarOpen, state.attributeTableLayerId, moreToolsOpen]);
+
   const contextMenuFeature = featureFromEditableLayer(
     getEditableLayerById(state.layers, mapContextMenu?.editable?.layerId),
     mapContextMenu?.editable?.featureId,
@@ -2012,10 +2081,12 @@ export function MapViewer(): JSX.Element {
     <div className="absolute inset-0 overflow-hidden">
       <div ref={mapContainerRef} className="absolute inset-0 h-full w-full" />
 
-      {/* Izquierda: SOLO Dibujo */}
-      <div className="absolute top-3 left-3 z-20">
-        <MapControls />
-      </div>
+      {/* Izquierda: SOLO Dibujo / medición (tablet y desktop) */}
+      {!isMobile && (
+        <div className="absolute top-3 left-3 z-map-controls">
+          <MapControls />
+        </div>
+      )}
 
       {/* Derecha: todos los demás controles, en columna (debajo de los nativos) */}
       <div className="maplibregl-ctrl-top-right maplibregl-ctrl-custom-top-right">
@@ -2025,8 +2096,10 @@ export function MapViewer(): JSX.Element {
         {/* Geolocate (usuario) */}
         <div className="maplibregl-ctrl maplibregl-ctrl-group">
           <button
+            type="button"
             className="maplibregl-ctrl-custom-locate"
             title="Mi ubicación"
+            aria-label="Mi ubicación"
             onClick={() => {
               if (!navigator.geolocation) return;
               const map = mapRef.current;
@@ -2048,6 +2121,8 @@ export function MapViewer(): JSX.Element {
             <span className="maplibregl-ctrl-icon"></span>
           </button>
         </div>
+        {!isMobile && (
+        <>
         {/* Reset */}
         <div className="maplibregl-ctrl maplibregl-ctrl-group">
           <button
@@ -2153,11 +2228,15 @@ export function MapViewer(): JSX.Element {
             />
           </button>
         </div>
+        </>
+        )}
       </div>
-      <div className="absolute bottom-3 right-3 z-10">
+      {!isMobile && (
+      <div className="absolute bottom-3 right-3 z-map-controls">
         <MiniMap styleUrl={styleUrl} />
       </div>
-      {mapContextMenu && mapContainerRef.current && (
+      )}
+      {!isMobile && mapContextMenu && mapContainerRef.current && (
         <FeatureContextMenu
           x={mapContextMenu.x}
           y={mapContextMenu.y}
@@ -2212,6 +2291,90 @@ export function MapViewer(): JSX.Element {
           }}
         />
       )}
+      {isMobile && mapActionSheet && (
+        <MapActionSheet
+          lng={mapActionSheet.lng}
+          lat={mapActionSheet.lat}
+          onCopyCoordinates={() => {
+            void handleCopyCoordinates(mapActionSheet.lng, mapActionSheet.lat);
+            setMapActionSheet(null);
+          }}
+          onGetInfo={() => {
+            void handleGetInfo(
+              { x: mapActionSheet.x, y: mapActionSheet.y },
+              mapActionSheet.lng,
+              mapActionSheet.lat,
+            );
+            setMapActionSheet(null);
+          }}
+          onClose={() => setMapActionSheet(null)}
+        />
+      )}
+      {moreToolsOpen && (
+        <MobileMoreSheet
+          terrainOn={terrainOn}
+          buildingsOn={buildings3DEnabled}
+          onClose={() => onMoreToolsOpenChange?.(false)}
+          onResetView={() => {
+            const map = mapRef.current;
+            if (!map) return;
+            map.flyTo({
+              center: INITIAL_CENTER,
+              zoom: INITIAL_ZOOM,
+              pitch: terrainOn ? INITIAL_PITCH : 0,
+              bearing: INITIAL_BEARING,
+              duration: 1500,
+            });
+            onMoreToolsOpenChange?.(false);
+          }}
+          onToggleTerrain={() => {
+            const map = mapRef.current;
+            if (!map) return;
+            const next = !terrainOn;
+            setTerrainOn(next);
+            try {
+              if (next) {
+                if (!map.getSource("terrain-rgb")) {
+                  map.addSource("terrain-rgb", {
+                    type: "raster-dem",
+                    url: `https://api.maptiler.com/tiles/terrain-rgb/tiles.json?key=${MAPTILER_KEY}`,
+                    encoding: "mapbox",
+                  } as any);
+                }
+                map.setTerrain({
+                  source: "terrain-rgb",
+                  exaggeration: TERRAIN_EXAGGERATION,
+                } as any);
+                if (!map.getLayer("hillshade")) {
+                  const beforeId = (map.getStyle() as any)?.layers?.find(
+                    (l: any) => l.type === "symbol",
+                  )?.id;
+                  map.addLayer(
+                    {
+                      id: "hillshade",
+                      type: "hillshade",
+                      source: "terrain-rgb",
+                      paint: {
+                        "hillshade-shadow-color": "#473B24",
+                        "hillshade-highlight-color": "#FFFFFF",
+                        "hillshade-accent-color": "#000000",
+                        "hillshade-illumination-direction": 315,
+                        "hillshade-illumination-anchor": "map",
+                        "hillshade-exaggeration": 1.0,
+                      },
+                    } as any,
+                    beforeId,
+                  );
+                }
+              } else {
+                map.setTerrain(null as any);
+                if (map.getLayer("hillshade")) map.removeLayer("hillshade");
+              }
+            } catch {}
+          }}
+          onToggleBuildings={() => setBuildings3DEnabled((prev) => !prev)}
+        />
+      )}
       {featureInfo && (
         <FeatureInfoDialog
           open
@@ -2229,7 +2392,7 @@ export function MapViewer(): JSX.Element {
       {toastMessage && (
         <div
           role="status"
-          className="pointer-events-none fixed bottom-16 left-1/2 z-[1300] -translate-x-1/2 rounded-md border bg-card px-3 py-1.5 text-sm shadow-md"
+          className="pointer-events-none fixed bottom-24 left-1/2 z-toast -translate-x-1/2 rounded-md border bg-card px-3 py-1.5 text-sm shadow-md"
         >
           {toastMessage}
         </div>

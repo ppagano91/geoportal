@@ -3,7 +3,7 @@ import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { ScrollArea } from "../ui/ScrollArea";
-import { ArrowDown, ArrowUp, Check, Download, Eye, EyeOff, Locate, MoreVertical, Pencil, Plus, Settings2, Table2, Trash2, Upload, MapPinPlus, LayersPlus  } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Download, Eye, EyeOff, Locate, MoreVertical, Pencil, Plus, Settings2, Table2, Trash2, Upload, X, LayersPlus  } from "lucide-react";
 import type { Layer } from "../../types/geoportal";
 import { DRAWING_SESSION_LAYER_ID } from "../../persistence/drawingLayers";
 import { geometryTypeLabel } from "../../persistence/editableLayers";
@@ -23,8 +23,10 @@ import {
   DialogTitle,
 } from "../ui/Dialog";
 import { cn } from "../../utils/cn";
+import { useResponsive } from "../../hooks/useResponsive";
 
-type SidebarTab = "layers" | "wms" | "wfs";
+export type SidebarTab = "layers" | "wms" | "wfs";
+export type SidebarPresentation = "docked" | "overlay" | "sheet";
 
 const SIDEBAR_TABS: { id: SidebarTab; label: string }[] = [
   { id: "layers", label: "Capas" },
@@ -88,9 +90,10 @@ function LayerActionButton({
     <button
       type="button"
       title={title}
+      aria-label={title}
       onClick={onClick}
       className={cn(
-        "control h-7 w-7 shrink-0 p-0",
+        "control h-11 w-11 shrink-0 p-0 desktop:h-7 desktop:w-7",
         active ? "border-primary bg-primary text-primary-foreground" : null,
         destructive && !active ? "text-destructive" : null,
       )}
@@ -102,11 +105,23 @@ function LayerActionButton({
 
 const ACTION_ICON = "h-3.5 w-3.5";
 
-export function Sidebar(): JSX.Element {
+export function Sidebar({
+  presentation = "docked",
+  tab,
+  onTabChange,
+  onClose,
+}: {
+  presentation?: SidebarPresentation;
+  tab?: SidebarTab;
+  onTabChange?: (tab: SidebarTab) => void;
+  onClose?: () => void;
+}): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
   const { state, dispatch, measureEngineRef, mapRef } = ctx;
+  const { isMobile } = useResponsive();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTab] = useState<SidebarTab>("layers");
+  const [internalTab, setInternalTab] = useState<SidebarTab>("layers");
+  const activeTab = tab ?? internalTab;
   const [createEditableOpen, setCreateEditableOpen] = useState(false);
   const [moreMenuLayerId, setMoreMenuLayerId] = useState<string | null>(null);
   const [layerPendingDeletion, setLayerPendingDeletion] = useState<{
@@ -254,7 +269,7 @@ export function Sidebar(): JSX.Element {
     }
     dispatch({ type: "addLayer", layer: result.layer });
     dispatch({ type: "setActiveLayer", id: result.layer.id });
-    setActiveTab("layers");
+    selectTab("layers");
     setNotice(
       result.truncated
         ? {
@@ -265,38 +280,63 @@ export function Sidebar(): JSX.Element {
     );
   }
 
+  function selectTab(next: SidebarTab) {
+    setInternalTab(next);
+    onTabChange?.(next);
+    setMoreMenuLayerId(null);
+  }
+
+  const sheetTitle =
+    activeTab === "layers" ? "Capas" : activeTab === "wms" ? "WMS" : "WFS";
+  const allowEditing = !isMobile;
+
   return (
     <div className="h-full flex flex-col">
+      {presentation === "sheet" && (
+        <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5">
+          <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">
+            {sheetTitle}
+          </h2>
+          <button
+            type="button"
+            aria-label="Cerrar panel"
+            title="Cerrar"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+      {presentation !== "sheet" && (
       <nav
         className="flex shrink-0 overflow-hidden border-b"
         role="tablist"
         aria-label="Capas del mapa"
       >
-        {SIDEBAR_TABS.map((tab) => {
-          const active = activeTab === tab.id;
+        {SIDEBAR_TABS.map((item) => {
+          const active = activeTab === item.id;
           return (
             <button
-              key={tab.id}
+              key={item.id}
               type="button"
               role="tab"
               aria-selected={active}
-              onClick={() => {
-                setActiveTab(tab.id);
-                setMoreMenuLayerId(null);
-              }}
+              onClick={() => selectTab(item.id)}
               className={cn(
-                "min-w-0 flex-1 truncate px-1 py-2 text-center text-sm border-b-2 -mb-px",
+                "min-w-0 flex-1 truncate px-1 py-2 text-center text-sm border-b-2 -mb-px min-h-11 tablet:min-h-0",
                 active
                   ? "border-primary bg-muted/70 font-medium text-foreground"
                   : "border-transparent font-normal text-muted-foreground hover:bg-muted/40 hover:text-foreground",
               )}
             >
-              {tab.label}
+              {item.label}
             </button>
           );
         })}
       </nav>
-      {activeTab === "layers" && (
+      )}
+      {activeTab === "layers" && allowEditing && (
         <div
           onDragOver={(e) => e.preventDefault()}
           onDrop={onDrop}
@@ -463,7 +503,7 @@ export function Sidebar(): JSX.Element {
                 ref={moreMenuLayerId === l.id ? moreMenuRef : undefined}
                 className="flex flex-col gap-1"
               >
-                <div className="flex items-center gap-0.5">
+                <div className="flex flex-wrap items-center gap-0.5">
                   <LayerActionButton
                     title="Mostrar/Ocultar"
                     onClick={() =>
@@ -480,7 +520,7 @@ export function Sidebar(): JSX.Element {
                       <EyeOff className={ACTION_ICON} />
                     )}
                   </LayerActionButton>
-                  {l.type === "wfs" && (
+                  {!!l.data && (
                     <LayerActionButton
                       title="Zoom a capa"
                       onClick={() => {
@@ -492,7 +532,7 @@ export function Sidebar(): JSX.Element {
                       <Locate className={ACTION_ICON} />
                     </LayerActionButton>
                   )}
-                  {l.type === "editable" && (
+                  {allowEditing && l.type === "editable" && (
                     <LayerActionButton
                       title={
                         l.id === state.editingLayerId
@@ -533,57 +573,127 @@ export function Sidebar(): JSX.Element {
                           dispatch({ type: "closeAttributeTable" });
                         } else {
                           dispatch({ type: "openAttributeTable", id: l.id });
+                          if (isMobile) onClose?.();
                         }
                       }}
                     >
                       <Table2 className={ACTION_ICON} />
                     </LayerActionButton>
                   )}
-                <LayerActionButton
-                  title="Subir"
-                  onClick={() =>
-                    dispatch({ type: "moveLayer", id: l.id, direction: "up" })
-                  }
-                >
-                  <ArrowUp className={ACTION_ICON} />
-                </LayerActionButton>
-                <LayerActionButton
-                  title="Bajar"
-                  onClick={() =>
-                    dispatch({ type: "moveLayer", id: l.id, direction: "down" })
-                  }
-                >
-                  <ArrowDown className={ACTION_ICON} />
-                </LayerActionButton>
-                <span className="mx-0.5 h-4 w-px shrink-0 bg-border" />
-                <LayerActionButton
-                  title="Eliminar"
-                  destructive
-                  onClick={() =>
-                    setLayerPendingDeletion({ id: l.id, name: l.name })
-                  }
-                >
-                  <Trash2 className={ACTION_ICON} />
-                </LayerActionButton>
-                             
-                  {l.type !== "wms" && l.type !== "wfs" && (
+                  {!isMobile && (
+                    <>
+                      <LayerActionButton
+                        title="Subir"
+                        onClick={() =>
+                          dispatch({ type: "moveLayer", id: l.id, direction: "up" })
+                        }
+                      >
+                        <ArrowUp className={ACTION_ICON} />
+                      </LayerActionButton>
+                      <LayerActionButton
+                        title="Bajar"
+                        onClick={() =>
+                          dispatch({
+                            type: "moveLayer",
+                            id: l.id,
+                            direction: "down",
+                          })
+                        }
+                      >
+                        <ArrowDown className={ACTION_ICON} />
+                      </LayerActionButton>
+                      <span className="mx-0.5 h-4 w-px shrink-0 bg-border" />
+                      <LayerActionButton
+                        title="Eliminar"
+                        destructive
+                        onClick={() =>
+                          setLayerPendingDeletion({ id: l.id, name: l.name })
+                        }
+                      >
+                        <Trash2 className={ACTION_ICON} />
+                      </LayerActionButton>
+                      {l.type !== "wms" && l.type !== "wfs" && (
+                        <LayerActionButton
+                          title="Descargar GeoJSON"
+                          onClick={() => exportLayerToGeoJSON(l)}
+                        >
+                          <Download className={ACTION_ICON} />
+                        </LayerActionButton>
+                      )}
+                      {allowEditing && l.type === "wfs" && (
+                        <LayerActionButton
+                          title="Convertir a capa local"
+                          onClick={() => convertWfsToLocal(l)}
+                        >
+                          <LayersPlus className={ACTION_ICON} />
+                        </LayerActionButton>
+                      )}
+                    </>
+                  )}
+                  {isMobile && (
                     <LayerActionButton
-                      title="Descargar GeoJSON"
-                      onClick={() => exportLayerToGeoJSON(l)}
+                      title="Más acciones"
+                      active={moreMenuLayerId === l.id}
+                      onClick={() =>
+                        setMoreMenuLayerId((current) =>
+                          current === l.id ? null : l.id,
+                        )
+                      }
                     >
-                      <Download className={ACTION_ICON} />
+                      <MoreVertical className={ACTION_ICON} />
                     </LayerActionButton>
                   )}
-                  {l.type === "wfs" && (
-                  <LayerActionButton
-                  title="Convertir a capa local"
-                  onClick={() => convertWfsToLocal(l)}
-                >
-                  <LayersPlus className={ACTION_ICON} />                  
-                </LayerActionButton>
-                )}     
-                  
-                </div>                
+                </div>
+                {isMobile && moreMenuLayerId === l.id && (
+                  <div className="surface mt-1 flex flex-col overflow-hidden py-1 text-sm">
+                    <button
+                      type="button"
+                      className="flex min-h-11 items-center px-3 text-left"
+                      onClick={() => {
+                        dispatch({ type: "moveLayer", id: l.id, direction: "up" });
+                        setMoreMenuLayerId(null);
+                      }}
+                    >
+                      Subir
+                    </button>
+                    <button
+                      type="button"
+                      className="flex min-h-11 items-center px-3 text-left"
+                      onClick={() => {
+                        dispatch({
+                          type: "moveLayer",
+                          id: l.id,
+                          direction: "down",
+                        });
+                        setMoreMenuLayerId(null);
+                      }}
+                    >
+                      Bajar
+                    </button>
+                    {l.type !== "wms" && l.type !== "wfs" && (
+                      <button
+                        type="button"
+                        className="flex min-h-11 items-center px-3 text-left"
+                        onClick={() => {
+                          exportLayerToGeoJSON(l);
+                          setMoreMenuLayerId(null);
+                        }}
+                      >
+                        Descargar GeoJSON
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="flex min-h-11 items-center px-3 text-left text-destructive"
+                      onClick={() => {
+                        setLayerPendingDeletion({ id: l.id, name: l.name });
+                        setMoreMenuLayerId(null);
+                      }}
+                    >
+                      Eliminar capa
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}

@@ -1,10 +1,11 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
-import { Pencil, X } from "lucide-react";
+import { Locate, Pencil, X } from "lucide-react";
 import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import type { Layer, LayerField } from "../../types/geoportal";
 import { inferFieldsFromFeatures } from "../../persistence/importGeoJSON";
 import { zoomToFeature } from "../../utils/geo";
 import { cn } from "../../utils/cn";
+import { useResponsive } from "../../hooks/useResponsive";
 
 const DEFAULT_HEIGHT = 240;
 const MIN_HEIGHT = 140;
@@ -64,12 +65,14 @@ function maxTableHeight(): number {
 export function AttributeTable(): JSX.Element | null {
   const ctx = useContext(GeoPortalContext)!;
   const { state, dispatch, mapRef } = ctx;
+  const { isMobile, isTablet } = useResponsive();
   const layer = getAttributeTableLayer(
     state.layers,
     state.attributeTableLayerId,
   );
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
   const selectedRowRef = useRef<HTMLTableRowElement | null>(null);
+  const selectedCardRef = useRef<HTMLButtonElement | null>(null);
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(
     null,
   );
@@ -90,6 +93,9 @@ export function AttributeTable(): JSX.Element | null {
       block: "nearest",
       inline: "nearest",
     });
+    selectedCardRef.current?.scrollIntoView({
+      block: "nearest",
+    });
   }, [selectedId]);
 
   if (!layer) return null;
@@ -98,8 +104,13 @@ export function AttributeTable(): JSX.Element | null {
   const features = tableLayer.data?.features ?? [];
   const fields = fieldsForTable(tableLayer);
   const count = features.length;
-  const readOnly = tableLayer.type === "wfs";
+  const readOnly = tableLayer.type === "wfs" || isMobile;
   const colSpan = fields.length + (readOnly ? 1 : 2);
+  const panelHeight = isMobile
+    ? undefined
+    : isTablet
+      ? undefined
+      : height;
 
   function selectFeature(featureId: string | number) {
     dispatch({
@@ -138,10 +149,15 @@ export function AttributeTable(): JSX.Element | null {
 
   return (
     <section
-      className="flex shrink-0 flex-col border-t bg-card"
-      style={{ height }}
+      className={cn(
+        "flex shrink-0 flex-col border-t bg-card",
+        isMobile && "h-[45dvh]",
+        isTablet && "h-[40vh] max-h-[45vh] min-h-[35vh]",
+      )}
+      style={panelHeight != null ? { height: panelHeight } : undefined}
       aria-label={`Tabla de atributos — ${tableLayer.name}`}
     >
+      {!isMobile && (
       <div
         role="separator"
         aria-orientation="horizontal"
@@ -153,9 +169,10 @@ export function AttributeTable(): JSX.Element | null {
         onPointerUp={onResizePointerUp}
         onPointerCancel={onResizePointerUp}
       />
+      )}
       <header className="flex shrink-0 items-center gap-3 border-b px-3 py-1.5">
         <div className="min-w-0 flex-1 truncate font-medium">
-          Tabla de atributos — {tableLayer.name}
+          {isMobile ? "Atributos" : "Tabla de atributos"} — {tableLayer.name}
         </div>
         <div className="shrink-0 text-xs text-muted-foreground">
           {count} {count === 1 ? "entidad" : "entidades"}
@@ -164,12 +181,71 @@ export function AttributeTable(): JSX.Element | null {
           type="button"
           title="Cerrar"
           aria-label="Cerrar"
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground desktop:h-7 desktop:w-7"
           onClick={() => dispatch({ type: "closeAttributeTable" })}
         >
           <X className="h-4 w-4" />
         </button>
       </header>
+      {isMobile ? (
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+          {count === 0 ? (
+            <p className="px-1 py-6 text-center text-sm text-muted-foreground">
+              No hay entidades en esta capa.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {features.map((feature, index) => {
+                const featureId = feature.id;
+                const selected =
+                  featureId != null &&
+                  selectedId != null &&
+                  String(selectedId) === String(featureId);
+                return (
+                  <button
+                    key={
+                      featureId == null ? `card-${index}` : String(featureId)
+                    }
+                    type="button"
+                    ref={selected ? selectedCardRef : undefined}
+                    className={cn(
+                      "surface w-full p-3 text-left",
+                      selected ? "ring-1 ring-primary" : null,
+                    )}
+                    onClick={() => {
+                      if (featureId == null) return;
+                      selectFeature(featureId);
+                      zoomRow(feature);
+                    }}
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="truncate font-medium">
+                        Entidad{" "}
+                        {featureId == null
+                          ? index + 1
+                          : abbreviateId(String(featureId))}
+                      </div>
+                      <Locate className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    </div>
+                    <dl className="grid gap-2">
+                      {fields.map((field) => (
+                        <div key={field.name} className="min-w-0">
+                          <dt className="text-xs text-muted-foreground">
+                            {field.name}
+                          </dt>
+                          <dd className="break-words text-sm">
+                            {formatFieldValue(field, feature.properties)}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-max min-w-full border-collapse text-sm">
           <thead className="sticky top-0 z-[1]">
@@ -286,6 +362,7 @@ export function AttributeTable(): JSX.Element | null {
           </tbody>
         </table>
       </div>
+      )}
     </section>
   );
 }

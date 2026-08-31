@@ -65,12 +65,32 @@
   body,
   #root {
     height: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
   }
   * {
     @apply border-border/50;
   }
   body {
     @apply bg-background text-foreground antialiased;
+  }
+  body.gp-scroll-lock {
+    overflow: hidden;
+  }
+}
+
+.gp-sidebar-panel {
+  overscroll-behavior: contain;
+  transition:
+    transform 200ms ease,
+    opacity 200ms ease,
+    width 200ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gp-sidebar-panel {
+    transition: none !important;
   }
 }
 
@@ -129,6 +149,36 @@
 /* Evitar solapes con attribution/scale en bottom-left (sin cambios funcionales) */
 .maplibregl-ctrl-bottom-left .maplibregl-ctrl {
   margin: 0.25rem 0.5rem;
+}
+
+/* Dialogos: política responsive común (desktop / tablet / mobile) */
+.dialog-responsive {
+  max-height: min(42rem, calc(100dvh - 2rem));
+}
+@media (max-width: 1023.98px) {
+  .dialog-responsive {
+    max-width: min(85vw, 42rem);
+    max-height: 85dvh;
+  }
+}
+@media (max-width: 767.98px) {
+  .dialog-responsive {
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+    max-height: 95dvh;
+  }
+  .maplibregl-ctrl button,
+  .maplibregl-ctrl-group > button,
+  .maplibregl-ctrl-fullscreen button {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+  .maplibregl-ctrl-top-right .maplibregl-ctrl {
+    margin: 0 0 0.35rem 0;
+  }
+  .maplibregl-ctrl-custom-top-right {
+    margin-top: 7.5rem;
+  }
 }
 
 button.maplibregl-ctrl-custom-layers .maplibregl-ctrl-icon {

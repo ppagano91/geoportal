@@ -172,7 +172,7 @@ export function LayerSettingsDialog(): JSX.Element | null {
       open={open}
       onOpenChange={(o) => !o && close()}
       showClose
-      className="h-[min(32rem,calc(100vh-2rem))] w-full max-w-xl overflow-hidden p-0"
+      className="h-[min(32rem,calc(100dvh-2rem))] w-full max-w-xl overflow-hidden p-0"
     >
       <DialogHeader className="shrink-0 border-b px-4 py-2.5 pr-14">
         <DialogTitle>Propiedades de la capa</DialogTitle>

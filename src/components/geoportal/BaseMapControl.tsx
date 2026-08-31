@@ -34,24 +34,27 @@ export function BaseMapControl(): JSX.Element {
   return (
     <div ref={ref} className="maplibregl-ctrl maplibregl-ctrl-group">
       <button
+        type="button"
         className="maplibregl-ctrl-custom-layers"
         title="Mapas base"
+        aria-label="Mapas base"
+        aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
         <span className="maplibregl-ctrl-icon"></span>
       </button>
       {open && (
-        <div className="absolute right-11 top-0 surface p-2 w-44 z-40">
+        <div className="absolute right-0 top-full mt-1 surface z-40 w-44 p-2 max-md:right-0">
           <div className="text-xs text-muted-foreground mb-1">Mapas base</div>
           <div className="flex flex-col">
             {items.map((it) => (
               <div
                 key={it.key}
                 className={cn(
-                  "w-full flex text-left rounded hover:bg-muted cursor-pointer p-1 gap-2",
+                  "w-full flex text-left rounded min-h-11 items-center cursor-pointer p-1 gap-2",
                   state.baseMap === it.key
                     ? "bg-primary text-primary-foreground hover:bg-primary"
-                    : ""
+                    : "hover:bg-muted"
                 )}
                 onClick={() => {
                   setOpen(false);

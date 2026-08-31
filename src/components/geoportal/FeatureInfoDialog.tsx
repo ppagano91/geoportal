@@ -90,7 +90,7 @@ export function FeatureInfoDialog({
         if (!next) onClose();
       }}
       showClose
-      className="h-[min(32rem,calc(100vh-5rem))] max-h-[calc(100vh-5rem)] w-full max-w-lg overflow-hidden p-0"
+      className="h-[min(32rem,calc(100dvh-5rem))] max-h-[calc(100dvh-5rem)] w-full max-w-lg overflow-hidden p-0 max-md:h-[min(95dvh,calc(100dvh-16px))] max-md:max-h-[calc(100dvh-16px)]"
     >
       <DialogHeader className="shrink-0 border-b px-4 py-3 pr-14">
         <DialogTitle>Información del punto</DialogTitle>

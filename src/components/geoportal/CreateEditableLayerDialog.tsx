@@ -100,7 +100,7 @@ export function CreateEditableLayerDialog({
       open={open}
       onOpenChange={onOpenChange}
       showClose
-      className="h-[min(36rem,calc(100vh-2rem))] max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-hidden p-0"
+      className="h-[min(36rem,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-hidden p-0"
     >
       <DialogHeader className="shrink-0 border-b px-4 py-3 pr-14">
         <DialogTitle>Crear capa editable</DialogTitle>

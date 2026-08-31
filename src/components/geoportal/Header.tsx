@@ -5,10 +5,12 @@ import { Switch } from "../ui/Switch";
 import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import { Moon, SunMedium, PanelLeft } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
+import { useResponsive } from "../../hooks/useResponsive";
 
 export function Header(): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
   const { state, dispatch } = ctx;
+  const { isMobile } = useResponsive();
   const isDark = state.theme === "dark";
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -21,25 +23,38 @@ export function Header(): JSX.Element {
     return () => document.removeEventListener("click", onDoc);
   }, []);
   return (
-    <header className="w-full border-b bg-card/95 backdrop-blur-md relative z-[1000]">
-      <div className="mx-auto flex h-14 items-center gap-2 px-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Toggle Sidebar"
-          onClick={() => dispatch({ type: "toggleSidebar" })}
-        >
-          <PanelLeft className="h-5 w-5" />
-        </Button>
-        <div className="flex-1">
-          <Input
-            placeholder="Buscar capas..."
-            value={state.searchQuery}
-            onChange={(e) =>
-              dispatch({ type: "setSearch", query: e.target.value })
+    <header className="relative z-header w-full shrink-0 border-b bg-card/95 backdrop-blur-md">
+      <div className="mx-auto flex h-12 items-center gap-2 px-3 tablet:h-14">
+        {!isMobile && (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={
+              state.sidebarOpen
+                ? "Cerrar panel de capas"
+                : "Abrir panel de capas"
             }
-          />
-        </div>
+            title="Panel de capas"
+            onClick={() => dispatch({ type: "toggleSidebar" })}
+          >
+            <PanelLeft className="h-5 w-5" />
+          </Button>
+        )}
+        {isMobile && (
+          <div className="truncate text-sm font-semibold">GeoPortal</div>
+        )}
+        {!isMobile && (
+          <div className="flex-1">
+            <Input
+              placeholder="Buscar capas..."
+              value={state.searchQuery}
+              onChange={(e) =>
+                dispatch({ type: "setSearch", query: e.target.value })
+              }
+            />
+          </div>
+        )}
+        {isMobile && <div className="flex-1" />}
         <div className="flex items-center gap-2">
           <SunMedium className="h-4 w-4 opacity-70" />
           <Switch
@@ -64,7 +79,7 @@ export function Header(): JSX.Element {
             AR
           </button>
           {menuOpen && (
-            <div className="fixed right-3 top-14 surface p-2 w-44 z-[1100]">
+            <div className="fixed right-3 top-12 tablet:top-14 surface z-header w-44 p-2">
               <button className="w-full text-left px-2 py-1 rounded hover:bg-muted">
                 Preferencias
               </button>

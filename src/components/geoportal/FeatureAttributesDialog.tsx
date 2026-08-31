@@ -1,5 +1,6 @@
 import React, { useContext, useState } from "react";
 import { GeoPortalContext } from "../../shell/GeoPortalApp";
+import { useResponsive } from "../../hooks/useResponsive";
 import {
   Dialog,
   DialogDescription,
@@ -49,7 +50,8 @@ function draftFromProperties(
 export function FeatureAttributesDialog(): JSX.Element | null {
   const ctx = useContext(GeoPortalContext)!;
   const { state, dispatch } = ctx;
-  if (!state.featureAttributesOpen) return null;
+  const { isMobile } = useResponsive();
+  if (isMobile || !state.featureAttributesOpen) return null;
 
   const layer = getEditableLayerById(
     state.layers,
@@ -112,7 +114,7 @@ function FeatureAttributesForm({
         if (!open) onClose();
       }}
       showClose
-      className="h-[min(32rem,calc(100vh-2rem))] max-h-[calc(100vh-2rem)] w-full max-w-md overflow-hidden p-0"
+      className="h-[min(32rem,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-hidden p-0"
     >
       <DialogHeader className="shrink-0 border-b px-4 py-3 pr-14">
         <DialogTitle>Atributos de entidad</DialogTitle>

@@ -21,7 +21,7 @@ const sizeClass: Record<Size, string> = {
 	sm: 'h-8 px-3 text-sm',
 	md: 'h-9 px-4',
 	lg: 'h-11 px-5 text-base',
-	icon: 'h-9 w-9'
+	icon: 'h-9 w-9 max-md:h-11 max-md:w-11'
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function Button(

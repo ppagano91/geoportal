@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ClipboardCopy, Info, Locate, Pencil, Trash2 } from "lucide-react";
 
 const ITEM_CLASS =
-  "flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-muted disabled:pointer-events-none disabled:opacity-50";
+  "flex min-h-11 w-full items-center gap-2 px-3 py-1.5 text-left desktop:min-h-0 hover:bg-muted disabled:pointer-events-none disabled:opacity-50";
 
 export function FeatureContextMenu({
   x,
@@ -68,7 +68,7 @@ export function FeatureContextMenu({
     <div
       ref={menuRef}
       role="menu"
-      className="surface absolute z-[1100] min-w-[12.5rem] overflow-hidden rounded-md border py-1 text-sm shadow-md"
+      className="surface absolute z-action-sheet min-w-[12.5rem] overflow-hidden rounded-md border py-1 text-sm shadow-md"
       style={{ left: pos.left, top: pos.top }}
       onContextMenu={(event) => event.preventDefault()}
     >

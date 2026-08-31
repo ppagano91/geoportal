@@ -250,8 +250,8 @@ export function WfsDialog({
 						: null
 
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange} className="relative w-full max-w-2xl overflow-visible p-4">
-			<DialogHeader>
+		<Dialog open={open} onOpenChange={onOpenChange} className="relative flex max-h-[inherit] w-full max-w-2xl flex-col overflow-visible p-4">
+			<DialogHeader className="mb-3 shrink-0">
 				<DialogTitle>Agregar WFS</DialogTitle>
 				<DialogDescription>
 					Busque FeatureTypes disponibles desde un servicio WFS y agréguelos al mapa.
@@ -317,7 +317,7 @@ export function WfsDialog({
 							disabled={!hasLayers || busy}
 							aria-expanded={layerMenuOpen}
 							aria-haspopup="listbox"
-							className="control flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-background px-3 text-left text-sm disabled:pointer-events-none disabled:opacity-50"
+							className="control flex h-11 w-full items-center justify-between gap-2 rounded-md border bg-background px-3 text-left text-sm disabled:pointer-events-none disabled:opacity-50 tablet:h-9"
 							onClick={() => setLayerMenuOpen((openMenu) => !openMenu)}
 						>
 							<span>Seleccionar capas ({selectedCount})</span>
@@ -332,7 +332,7 @@ export function WfsDialog({
 								{available.map((featureType) => (
 									<label
 										key={featureType.name}
-										className="flex cursor-pointer items-start gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted"
+										className="flex min-h-11 cursor-pointer items-start gap-2 rounded-sm px-2 py-2 text-sm hover:bg-muted"
 									>
 										<input
 											type="checkbox"
@@ -355,7 +355,7 @@ export function WfsDialog({
 					</div>
 				</div>
 			</div>
-			<DialogFooter>
+			<DialogFooter className="mt-4 flex shrink-0 flex-wrap items-center justify-end gap-2 max-md:flex-col-reverse max-md:[&>button]:w-full">
 				<Button variant="secondary" onClick={() => onOpenChange(false)} disabled={adding}>
 					Cancelar
 				</Button>

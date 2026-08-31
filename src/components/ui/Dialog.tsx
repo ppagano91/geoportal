@@ -34,7 +34,7 @@ export function Dialog({
 			type="button"
 			aria-label="Cerrar"
 			title="Cerrar"
-			className="absolute right-2.5 top-2.5 z-10 inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+			className="absolute right-2.5 top-2.5 z-10 inline-flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring tablet:h-9 tablet:w-9"
 			onClick={() => onOpenChange(false)}
 		>
 			<X className="h-4 w-4" />
@@ -42,7 +42,7 @@ export function Dialog({
 	) : null
 
 	return (
-		<div className="fixed inset-0 z-[1200]">
+		<div className="fixed inset-0 z-modal pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]">
 			<div className="absolute inset-0 bg-black/50" onClick={() => onOpenChange(false)} />
 			{fullScreen ? (
 				<div className="absolute inset-0 p-0">
@@ -52,12 +52,12 @@ export function Dialog({
 					</div>
 				</div>
 			) : (
-				<div className="absolute inset-0 flex items-center justify-center p-4">
+				<div className="absolute inset-0 flex items-center justify-center p-2 tablet:p-4">
 					<div
 						role="dialog"
 						aria-modal="true"
 						className={cn(
-							'surface relative flex min-h-0 flex-col',
+							'surface dialog-responsive relative flex min-h-0 flex-col',
 							className ?? 'w-full max-w-2xl p-4',
 						)}
 					>

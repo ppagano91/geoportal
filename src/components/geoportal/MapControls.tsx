@@ -55,7 +55,7 @@ export function MapControls(): JSX.Element {
   }
 
   return (
-    <div className="flex items-start gap-2">
+    <div className="flex items-start gap-1 tablet:gap-2">
       <div className="surface flex w-9 flex-col items-center p-0.5">
         <button
           className="flex h-9 w-9 items-center justify-center text-xs"
