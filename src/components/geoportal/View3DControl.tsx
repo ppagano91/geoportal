@@ -1,25 +1,52 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Axis3d } from "lucide-react";
-import { cn } from "../../utils/cn";
-import buildingsIcon from "../../assets/images/buildings.svg";
-import reliefIcon from "../../assets/images/relief.svg";
+import { Mountain } from "lucide-react";
+import { Switch } from "../ui/Switch";
 
-function ToggleKnob({ on }: { on: boolean }): JSX.Element {
+function stopMapEvent(event: { stopPropagation: () => void }): void {
+  event.stopPropagation();
+}
+
+function isInsideControl(root: HTMLElement | null, event: Event): boolean {
+  return !!root && event.target instanceof Node && root.contains(event.target);
+}
+
+function isMapCanvasEvent(event: Event): boolean {
+  const el = event.target;
+  if (!(el instanceof Element)) return false;
+  return !!el.closest(".maplibregl-canvas-container, canvas.maplibregl-canvas");
+}
+
+function ToggleRow({
+  label,
+  checked,
+  onToggle,
+}: {
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+}): JSX.Element {
   return (
-    <span
-      aria-hidden
-      className={cn(
-        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
-        on ? "bg-primary" : "bg-muted",
-      )}
+    <div
+      role="menuitemcheckbox"
+      aria-checked={checked}
+      tabIndex={0}
+      className="gp-view3d-row"
+      onClick={onToggle}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onToggle();
+        }
+      }}
     >
-      <span
-        className={cn(
-          "inline-block h-4 w-4 rounded-full bg-background shadow transition-transform",
-          on ? "translate-x-4" : "translate-x-0.5",
-        )}
+      <span className="gp-view3d-row-label">{label}</span>
+      <Switch
+        checked={checked}
+        tabIndex={-1}
+        aria-hidden
+        className="pointer-events-none"
       />
-    </span>
+    </div>
   );
 }
 
@@ -38,6 +65,7 @@ export function View3DControl({
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
+  const suppressMapClickRef = useRef(false);
   const active = terrainOn || buildingsOn;
 
   useEffect(() => {
@@ -45,73 +73,95 @@ export function View3DControl({
   }, [dismiss]);
 
   useEffect(() => {
+    function suppressQueuedMapClick(event: Event) {
+      if (!suppressMapClickRef.current) return;
+      if (isMapCanvasEvent(event)) event.stopPropagation();
+    }
+    document.addEventListener("click", suppressQueuedMapClick, true);
+    document.addEventListener("pointerup", suppressQueuedMapClick, true);
+    document.addEventListener("mouseup", suppressQueuedMapClick, true);
+    document.addEventListener("touchend", suppressQueuedMapClick, true);
+    return () => {
+      document.removeEventListener("click", suppressQueuedMapClick, true);
+      document.removeEventListener("pointerup", suppressQueuedMapClick, true);
+      document.removeEventListener("mouseup", suppressQueuedMapClick, true);
+      document.removeEventListener("touchend", suppressQueuedMapClick, true);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!open) return;
-    function onPointer(event: PointerEvent) {
-      if (!ref.current) return;
-      if (!ref.current.contains(event.target as Node)) setOpen(false);
+    function onOutside(event: Event) {
+      if (isInsideControl(ref.current, event)) return;
+      setOpen(false);
+      if (isMapCanvasEvent(event)) {
+        suppressMapClickRef.current = true;
+        event.stopPropagation();
+        window.setTimeout(() => {
+          suppressMapClickRef.current = false;
+        }, 400);
+      }
     }
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") setOpen(false);
     }
-    document.addEventListener("pointerdown", onPointer);
+    const startEvents = ["pointerdown", "mousedown", "touchstart"] as const;
+    for (const type of startEvents) {
+      document.addEventListener(type, onOutside, true);
+    }
     document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("pointerdown", onPointer);
+      for (const type of startEvents) {
+        document.removeEventListener(type, onOutside, true);
+      }
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
 
   return (
-    <div ref={ref} className="maplibregl-ctrl maplibregl-ctrl-group relative">
-      <button
-        type="button"
-        className={cn("maplibregl-ctrl-custom-3d", active && "is-on")}
-        title="Visualización 3D"
-        aria-label="Visualización 3D"
-        aria-expanded={open}
-        aria-haspopup="menu"
-        onClick={() => setOpen((value) => !value)}
-      >
-        <Axis3d />
-      </button>
+    <div
+      ref={ref}
+      className="relative"
+      onPointerDown={stopMapEvent}
+      onPointerUp={stopMapEvent}
+      onMouseDown={stopMapEvent}
+      onMouseUp={stopMapEvent}
+      onClick={stopMapEvent}
+      onTouchStart={stopMapEvent}
+      onTouchEnd={stopMapEvent}
+    >
+      <div className="maplibregl-ctrl maplibregl-ctrl-group">
+        <button
+          type="button"
+          className={
+            active ? "maplibregl-ctrl-custom-3d is-on" : "maplibregl-ctrl-custom-3d"
+          }
+          title="Visualización 3D"
+          aria-label="Visualización 3D"
+          aria-expanded={open}
+          aria-haspopup="menu"
+          onClick={() => setOpen((value) => !value)}
+        >
+          <Mountain className="gp-view3d-icon" aria-hidden />
+        </button>
+      </div>
       {open && (
         <div
           role="menu"
           aria-label="Visualización 3D"
-          className="surface absolute right-full top-0 z-10 mr-1 w-[13.75rem] max-w-[calc(100vw-4.5rem)] overflow-hidden p-1"
+          className="gp-view3d-popover surface"
         >
-          <div className="px-2 py-1.5 text-sm font-medium">Visualización 3D</div>
-          <div className="mx-1 border-t border-border/60" />
-          <button
-            type="button"
-            role="menuitem"
-            aria-pressed={terrainOn}
-            className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm"
-            onClick={onToggleTerrain}
-          >
-            <img
-              src={reliefIcon}
-              alt=""
-              className="h-4 w-4 shrink-0 object-contain dark:invert"
-            />
-            <span className="min-w-0 flex-1">Relieve 3D</span>
-            <ToggleKnob on={terrainOn} />
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            aria-pressed={buildingsOn}
-            className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm"
-            onClick={onToggleBuildings}
-          >
-            <img
-              src={buildingsIcon}
-              alt=""
-              className="h-4 w-4 shrink-0 object-contain dark:invert"
-            />
-            <span className="min-w-0 flex-1">Edificios 3D</span>
-            <ToggleKnob on={buildingsOn} />
-          </button>
+          <div className="gp-view3d-popover-title">Visualización 3D</div>
+          <ToggleRow
+            label="Relieve 3D"
+            checked={terrainOn}
+            onToggle={onToggleTerrain}
+          />
+          <ToggleRow
+            label="Edificios 3D"
+            checked={buildingsOn}
+            onToggle={onToggleBuildings}
+          />
         </div>
       )}
     </div>
