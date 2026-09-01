@@ -32,7 +32,7 @@ export function BaseMapControl(): JSX.Element {
     { key: "dark", label: "Oscuro", icon: <Moon className="h-4 w-4" /> },
   ];
   return (
-    <div ref={ref} className="maplibregl-ctrl maplibregl-ctrl-group">
+    <div ref={ref} className="maplibregl-ctrl maplibregl-ctrl-group relative">
       <button
         type="button"
         className="maplibregl-ctrl-custom-layers"
@@ -44,7 +44,7 @@ export function BaseMapControl(): JSX.Element {
         <span className="maplibregl-ctrl-icon"></span>
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 surface z-40 w-44 p-2 max-md:right-0">
+        <div className="surface absolute right-0 top-full z-40 mt-1 w-44 p-2 max-md:right-full max-md:top-0 max-md:mt-0 max-md:mr-1">
           <div className="text-xs text-muted-foreground mb-1">Mapas base</div>
           <div className="flex flex-col">
             {items.map((it) => (

@@ -1,5 +1,5 @@
 import React from "react";
-import { Globe, Layers, MoreHorizontal, Waypoints } from "lucide-react";
+import { Globe, Layers, Waypoints } from "lucide-react";
 import type { MobilePanel } from "../../config/breakpoints";
 import { cn } from "../../utils/cn";
 
@@ -22,11 +22,6 @@ const ITEMS: Array<{
     id: "wfs",
     label: "WFS",
     icon: <Waypoints className="h-5 w-5" />,
-  },
-  {
-    id: "more",
-    label: "Más",
-    icon: <MoreHorizontal className="h-5 w-5" />,
   },
 ];
 

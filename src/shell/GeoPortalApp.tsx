@@ -687,14 +687,9 @@ export function GeoPortalApp(): JSX.Element {
           <Header />
           <div className="relative flex min-h-0 flex-1 flex-col">
             <div className="relative min-h-0 flex-1 overflow-hidden">
-              <MapViewer
-                moreToolsOpen={isMobile && mobilePanel === "more"}
-                onMoreToolsOpenChange={(open) =>
-                  setMobilePanel(open ? "more" : null)
-                }
-              />
+              <MapViewer />
               {dialogs}
-              {(overlayOpen || sheetOpen) && (
+              {overlayOpen && (
                 <button
                   type="button"
                   aria-label="Cerrar panel"
@@ -718,32 +713,28 @@ export function GeoPortalApp(): JSX.Element {
                   />
                 </aside>
               )}
-              {isMobile && sheetOpen && (
-                <aside
-                  className="gp-sidebar-panel absolute inset-x-0 bottom-0 z-sidebar flex h-[min(88dvh,calc(100%-2.5rem))] flex-col overflow-hidden rounded-t-xl border-t bg-background shadow-card"
-                  aria-label="Panel de capas"
-                >
-                  <Sidebar
-                    presentation="sheet"
-                    tab={sidebarTab}
-                    onTabChange={(next) => setMobilePanel(next)}
-                    onClose={closeChrome}
-                  />
-                </aside>
-              )}
             </div>
             <AttributeTable />
+            {isMobile && sheetOpen && (
+              <aside
+                className="gp-sidebar-panel absolute inset-0 z-sidebar flex flex-col overflow-hidden bg-background"
+                aria-label="Panel de capas"
+              >
+                <Sidebar
+                  presentation="sheet"
+                  tab={sidebarTab}
+                  onTabChange={(next) => setMobilePanel(next)}
+                  onClose={closeChrome}
+                />
+              </aside>
+            )}
           </div>
           {isMobile && (
             <MobileBottomNav
               active={mobilePanel}
               onChange={(panel) => {
                 setMobilePanel(panel);
-                if (panel && panel !== "more") {
-                  dispatch({ type: "setSidebarOpen", open: true });
-                } else {
-                  dispatch({ type: "setSidebarOpen", open: false });
-                }
+                dispatch({ type: "setSidebarOpen", open: panel != null });
               }}
             />
           )}

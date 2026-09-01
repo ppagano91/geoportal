@@ -7,7 +7,7 @@ export const BREAKPOINTS = {
 
 export type ResponsiveMode = 'mobile' | 'tablet' | 'desktop'
 
-export type MobilePanel = 'layers' | 'wms' | 'wfs' | 'more' | null
+export type MobilePanel = 'layers' | 'wms' | 'wfs' | null
 
 export const MOBILE_NAV_HEIGHT_CLASS = 'h-14'
 

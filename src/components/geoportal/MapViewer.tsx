@@ -19,7 +19,6 @@ import { BaseMapControl } from "./BaseMapControl";
 import { FeatureContextMenu } from "./FeatureContextMenu";
 import { FeatureInfoDialog } from "./FeatureInfoDialog";
 import { MapActionSheet } from "./MapActionSheet";
-import { MobileMoreSheet } from "./MobileMoreSheet";
 import {
   Dialog,
   DialogDescription,
@@ -31,6 +30,7 @@ import { Button } from "../ui/Button";
 import type { EditableLayer, FeatureInfoResult, Layer } from "../../types/geoportal";
 import { MiniMap } from "./MiniMap";
 import { MapControls } from "./MapControls";
+import { View3DControl } from "./View3DControl";
 import { env } from "../../config/env";
 import { useResponsive } from "../../hooks/useResponsive";
 import buildingsIcon from "../../assets/images/buildings.svg";
@@ -1030,13 +1030,7 @@ function findEditableFeatureAtPoint(
   return null;
 }
 
-export function MapViewer({
-  moreToolsOpen = false,
-  onMoreToolsOpenChange,
-}: {
-  moreToolsOpen?: boolean;
-  onMoreToolsOpenChange?: (open: boolean) => void;
-}): JSX.Element {
+export function MapViewer(): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
   const { state, dispatch, drawEngineRef, measureEngineRef, mapRef } = ctx;
   const { mode, isMobile } = useResponsive();
@@ -1978,7 +1972,7 @@ export function MapViewer({
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timeout);
     };
-  }, [mode, state.sidebarOpen, state.attributeTableLayerId, moreToolsOpen]);
+  }, [mode, state.sidebarOpen, state.attributeTableLayerId]);
 
   const contextMenuFeature = featureFromEditableLayer(
     getEditableLayerById(state.layers, mapContextMenu?.editable?.layerId),
@@ -2002,6 +1996,52 @@ export function MapViewer({
     const ok = await copyTextToClipboard(formatLngLat(lng, lat));
     setToastMessage(ok ? "Coordenadas copiadas" : "No se pudieron copiar las coordenadas");
   }, []);
+
+  const toggleTerrain = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const next = !terrainOn;
+    setTerrainOn(next);
+    try {
+      if (next) {
+        if (!map.getSource("terrain-rgb")) {
+          map.addSource("terrain-rgb", {
+            type: "raster-dem",
+            url: `https://api.maptiler.com/tiles/terrain-rgb/tiles.json?key=${MAPTILER_KEY}`,
+            encoding: "mapbox",
+          } as any);
+        }
+        map.setTerrain({
+          source: "terrain-rgb",
+          exaggeration: TERRAIN_EXAGGERATION,
+        } as any);
+        if (!map.getLayer("hillshade")) {
+          const beforeId = (map.getStyle() as any)?.layers?.find(
+            (l: any) => l.type === "symbol",
+          )?.id;
+          map.addLayer(
+            {
+              id: "hillshade",
+              type: "hillshade",
+              source: "terrain-rgb",
+              paint: {
+                "hillshade-shadow-color": "#473B24",
+                "hillshade-highlight-color": "#FFFFFF",
+                "hillshade-accent-color": "#000000",
+                "hillshade-illumination-direction": 315,
+                "hillshade-illumination-anchor": "map",
+                "hillshade-exaggeration": 1.0,
+              },
+            } as any,
+            beforeId,
+          );
+        }
+      } else {
+        map.setTerrain(null as any);
+        if (map.getLayer("hillshade")) map.removeLayer("hillshade");
+      }
+    } catch {}
+  }, [mapRef, terrainOn]);
 
   const closeFeatureInfo = useCallback(() => {
     featureInfoGenRef.current += 1;
@@ -2081,12 +2121,10 @@ export function MapViewer({
     <div className="geoportal-map absolute inset-0 z-0 overflow-hidden">
       <div ref={mapContainerRef} className="absolute inset-0 h-full w-full" />
 
-      {/* Izquierda: SOLO Dibujo / medición (tablet y desktop) */}
-      {!isMobile && (
-        <div className="absolute top-3 left-3 z-map-controls">
-          <MapControls />
-        </div>
-      )}
+      {/* Izquierda: Dibujo (desktop/tablet) y Medición */}
+      <div className="absolute top-3 left-3 z-map-controls">
+        <MapControls showDraw={!isMobile} />
+      </div>
 
       {/* Derecha: todos los demás controles, en columna (debajo de los nativos) */}
       <div className="maplibregl-ctrl-top-right maplibregl-ctrl-custom-top-right">
@@ -2121,13 +2159,13 @@ export function MapViewer({
             <span className="maplibregl-ctrl-icon"></span>
           </button>
         </div>
-        {!isMobile && (
-        <>
         {/* Reset */}
         <div className="maplibregl-ctrl maplibregl-ctrl-group">
           <button
+            type="button"
             className="maplibregl-ctrl-custom-reset"
             title="Volver a vista inicial"
+            aria-label="Volver a vista inicial"
             onClick={() => {
               const map = mapRef.current;
               if (!map) return;
@@ -2143,62 +2181,28 @@ export function MapViewer({
             <span className="maplibregl-ctrl-icon"></span>
           </button>
         </div>
+        {isMobile ? (
+          <View3DControl
+            terrainOn={terrainOn}
+            buildingsOn={buildings3DEnabled}
+            onToggleTerrain={toggleTerrain}
+            onToggleBuildings={() => setBuildings3DEnabled((prev) => !prev)}
+          />
+        ) : (
+          <>
         {/* 2D / 3D */}
         <div className="maplibregl-ctrl maplibregl-ctrl-group">
           <button
+            type="button"
             className={
               terrainOn
                 ? "maplibregl-ctrl-custom-terrain-on"
                 : "maplibregl-ctrl-custom-terrain-off"
             }
             title="Toggle Terrain"
-            onClick={() => {
-              const map = mapRef.current;
-              if (!map) return;
-              const next = !terrainOn;
-              setTerrainOn(next);
-              try {
-                if (next) {
-                  if (!map.getSource("terrain-rgb")) {
-                    map.addSource("terrain-rgb", {
-                      type: "raster-dem",
-                      url: `https://api.maptiler.com/tiles/terrain-rgb/tiles.json?key=${MAPTILER_KEY}`,
-                      encoding: "mapbox",
-                    } as any);
-                  }
-                  map.setTerrain({
-                    source: "terrain-rgb",
-                    exaggeration: TERRAIN_EXAGGERATION,
-                  } as any);
-                  if (!map.getLayer("hillshade")) {
-                    const beforeId = (map.getStyle() as any)?.layers?.find(
-                      (l: any) => l.type === "symbol",
-                    )?.id;
-                    map.addLayer(
-                      {
-                        id: "hillshade",
-                        type: "hillshade",
-                        source: "terrain-rgb",
-                        paint: {
-                          "hillshade-shadow-color": "#473B24",
-                          "hillshade-highlight-color": "#FFFFFF",
-                          "hillshade-accent-color": "#000000",
-                          "hillshade-illumination-direction": 315,
-                          "hillshade-illumination-anchor": "map",
-                          "hillshade-exaggeration": 1.0,
-                        },
-                      } as any,
-                      beforeId,
-                    );
-                  }
-                } else {
-                  map.setTerrain(null as any);
-                  if (map.getLayer("hillshade")) map.removeLayer("hillshade");
-                }
-              } catch {}
-            }}
+            aria-label="Relieve 3D"
+            onClick={toggleTerrain}
           >
-            {/* <span className="maplibregl-ctrl-icon"></span> */}
             <img
               src={reliefIcon}
               alt="Relieve"
@@ -2209,12 +2213,18 @@ export function MapViewer({
         {/* Edificios 3D */}
         <div className="maplibregl-ctrl maplibregl-ctrl-group">
           <button
+            type="button"
             className={
               buildings3DEnabled
                 ? "maplibregl-ctrl-custom-buildings-on"
                 : "maplibregl-ctrl-custom-buildings-off"
             }
             title={
+              buildings3DEnabled
+                ? "Desactivar edificios 3D"
+                : "Activar edificios 3D"
+            }
+            aria-label={
               buildings3DEnabled
                 ? "Desactivar edificios 3D"
                 : "Activar edificios 3D"
@@ -2228,7 +2238,7 @@ export function MapViewer({
             />
           </button>
         </div>
-        </>
+          </>
         )}
       </div>
       {!isMobile && (
@@ -2308,71 +2318,6 @@ export function MapViewer({
             setMapActionSheet(null);
           }}
           onClose={() => setMapActionSheet(null)}
-        />
-      )}
-      {moreToolsOpen && (
-        <MobileMoreSheet
-          terrainOn={terrainOn}
-          buildingsOn={buildings3DEnabled}
-          onClose={() => onMoreToolsOpenChange?.(false)}
-          onResetView={() => {
-            const map = mapRef.current;
-            if (!map) return;
-            map.flyTo({
-              center: INITIAL_CENTER,
-              zoom: INITIAL_ZOOM,
-              pitch: terrainOn ? INITIAL_PITCH : 0,
-              bearing: INITIAL_BEARING,
-              duration: 1500,
-            });
-            onMoreToolsOpenChange?.(false);
-          }}
-          onToggleTerrain={() => {
-            const map = mapRef.current;
-            if (!map) return;
-            const next = !terrainOn;
-            setTerrainOn(next);
-            try {
-              if (next) {
-                if (!map.getSource("terrain-rgb")) {
-                  map.addSource("terrain-rgb", {
-                    type: "raster-dem",
-                    url: `https://api.maptiler.com/tiles/terrain-rgb/tiles.json?key=${MAPTILER_KEY}`,
-                    encoding: "mapbox",
-                  } as any);
-                }
-                map.setTerrain({
-                  source: "terrain-rgb",
-                  exaggeration: TERRAIN_EXAGGERATION,
-                } as any);
-                if (!map.getLayer("hillshade")) {
-                  const beforeId = (map.getStyle() as any)?.layers?.find(
-                    (l: any) => l.type === "symbol",
-                  )?.id;
-                  map.addLayer(
-                    {
-                      id: "hillshade",
-                      type: "hillshade",
-                      source: "terrain-rgb",
-                      paint: {
-                        "hillshade-shadow-color": "#473B24",
-                        "hillshade-highlight-color": "#FFFFFF",
-                        "hillshade-accent-color": "#000000",
-                        "hillshade-illumination-direction": 315,
-                        "hillshade-illumination-anchor": "map",
-                        "hillshade-exaggeration": 1.0,
-                      },
-                    } as any,
-                    beforeId,
-                  );
-                }
-              } else {
-                map.setTerrain(null as any);
-                if (map.getLayer("hillshade")) map.removeLayer("hillshade");
-              }
-            } catch {}
-          }}
-          onToggleBuildings={() => setBuildings3DEnabled((prev) => !prev)}
         />
       )}
       {featureInfo && (

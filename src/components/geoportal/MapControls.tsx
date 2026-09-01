@@ -13,10 +13,16 @@ import {
   geometryTypeToDrawMode,
 } from "../../persistence/editableLayers";
 import { cn } from "../../utils/cn";
+import { useResponsive } from "../../hooks/useResponsive";
 
-export function MapControls(): JSX.Element {
+export function MapControls({
+  showDraw = true,
+}: {
+  showDraw?: boolean;
+}): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
   const { state, dispatch, drawEngineRef, measureEngineRef } = ctx;
+  const { isMobile } = useResponsive();
   const [openDraw, setOpenDraw] = useState(false);
   const [openMeasure, setOpenMeasure] = useState(false);
   const editable = getEditableLayerById(state.layers, state.editingLayerId);
@@ -54,12 +60,18 @@ export function MapControls(): JSX.Element {
     );
   }
 
+  const btn = isMobile ? "h-11 w-11 p-0" : "h-9 w-9 p-0";
+  const col = isMobile ? "w-11" : "w-9";
+
   return (
     <div className="flex items-start gap-1 tablet:gap-2">
-      <div className="surface flex w-9 flex-col items-center p-0.5">
+      {showDraw && (
+      <div className={cn("surface flex flex-col items-center p-0.5", col)}>
         <button
-          className="flex h-9 w-9 items-center justify-center text-xs"
+          type="button"
+          className={cn("flex items-center justify-center text-xs", btn)}
           title="Herramientas de Dibujo"
+          aria-label="Herramientas de Dibujo"
           onClick={() => setOpenDraw((v) => !v)}
         >
           🖍
@@ -185,14 +197,19 @@ export function MapControls(): JSX.Element {
           </>
         )}
       </div>
-      <div className="surface flex w-9 flex-col items-center p-0.5">
+      )}
+      <div className={cn("surface flex flex-col items-center p-0.5", col)}>
         <button
+          type="button"
           className={cn(
-            "flex h-9 w-9 items-center justify-center text-xs",
+            "flex items-center justify-center text-xs",
+            btn,
             measuring && "rounded-md bg-primary text-primary-foreground",
           )}
           title="Medir"
+          aria-label="Medición"
           aria-pressed={measuring}
+          aria-expanded={openMeasure}
           onClick={() => setOpenMeasure((v) => !v)}
         >
           <Ruler className="h-4 w-4" />
@@ -205,7 +222,7 @@ export function MapControls(): JSX.Element {
                 state.measureMode === "distance" ? "default" : "secondary"
               }
               size="icon"
-              className="h-9 w-9 p-0"
+              className={btn}
               aria-pressed={state.measureMode === "distance"}
               onClick={() => {
                 const mode =
@@ -220,7 +237,7 @@ export function MapControls(): JSX.Element {
               title="Medir área"
               variant={state.measureMode === "area" ? "default" : "secondary"}
               size="icon"
-              className="h-9 w-9 p-0"
+              className={btn}
               aria-pressed={state.measureMode === "area"}
               onClick={() => {
                 const mode = state.measureMode === "area" ? "none" : "area";
@@ -233,8 +250,9 @@ export function MapControls(): JSX.Element {
             <Button
               variant="secondary"
               size="icon"
-              className="h-9 w-9 p-0"
+              className={btn}
               title="Limpiar medición"
+              aria-label="Limpiar medición"
               onClick={() => measureEngineRef.current?.clear()}
             >
               <Eraser className="h-4 w-4" />
@@ -242,7 +260,7 @@ export function MapControls(): JSX.Element {
           </>
         )}
       </div>
-      {openDraw && (
+      {showDraw && openDraw && (
         <div className="surface max-w-[16rem] px-2 py-1.5 text-xs text-muted-foreground">
           {editable ? (
             <span>
@@ -258,7 +276,7 @@ export function MapControls(): JSX.Element {
           )}
         </div>
       )}
-      {measuring && (
+      {measuring && !isMobile && (
         <div className="surface max-w-[16rem] px-2 py-1.5 text-xs font-medium">
           {state.measureMode === "distance" ? "📏 Distancia" : "📏 Área"}
         </div>
