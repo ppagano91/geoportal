@@ -29,6 +29,26 @@
 
   --popover: 0 0% 100%;
   --popover-foreground: 222 47% 10%;
+
+  /*
+    Stacking scale (also consumed by tailwind theme.zIndex):
+      --z-modal        100  dialogs / backdrops
+      --z-toast        110  toasts
+      --z-header        50  app header
+      --z-sidebar       40  sidebar / mobile Capas-WMS-WFS panel
+      --z-action-sheet  30  mobile action sheet / context menu
+      --z-mobile-nav    20  bottom navigation
+      --z-map-controls  10  ALL MapLibre + custom map controls
+      --z-map            0  map canvas
+  */
+  --z-map: 0;
+  --z-map-controls: 10;
+  --z-mobile-nav: 20;
+  --z-action-sheet: 30;
+  --z-sidebar: 40;
+  --z-header: 50;
+  --z-modal: 100;
+  --z-toast: 110;
 }
 
 .dark {
@@ -90,22 +110,24 @@
 
 /*
   Aísla el mapa: canvas + controles MapLibre viven en este stacking context
-  y no pueden pintarse encima del sidebar / bottom sheet.
+  y no pueden pintarse encima del sidebar / bottom nav / modales.
+
+  MapLibre aplica z-index y transform en esquinas y .maplibregl-ctrl
+  (attribution, scale, zoom, etc.). isolation en el contenedor completo
+  atrapa esos valores internos para que NINGÚN control del mapa escape
+  al nivel de la UI de la aplicación.
 */
 .geoportal-map {
   isolation: isolate;
-  z-index: 0;
+  z-index: var(--z-map);
 }
 .geoportal-map .maplibregl-canvas-container {
-  z-index: 0;
+  z-index: var(--z-map);
 }
 .geoportal-map .maplibregl-control-container,
-.geoportal-map .maplibregl-ctrl-top-left,
-.geoportal-map .maplibregl-ctrl-top-right,
-.geoportal-map .maplibregl-ctrl-bottom-left,
-.geoportal-map .maplibregl-ctrl-bottom-right,
 .geoportal-map .maplibregl-ctrl-custom-top-right {
-  z-index: 10;
+  isolation: isolate;
+  z-index: var(--z-map-controls);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -230,6 +252,21 @@ button.maplibregl-ctrl-custom-buildings-on .maplibregl-ctrl-icon {
 }
 button.maplibregl-ctrl-custom-buildings-off {
   color: hsl(var(--foreground));
+}
+.geoportal-map button.maplibregl-ctrl-custom-3d {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.geoportal-map button.maplibregl-ctrl-custom-3d svg {
+  display: block;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.geoportal-map button.maplibregl-ctrl-custom-3d.is-on {
+  background-color: hsl(var(--primary) / 0.18);
+  color: hsl(var(--primary));
 }
 .maplibregl-ctrl-custom-top-right {
   position: absolute;

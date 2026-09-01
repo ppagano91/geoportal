@@ -14,15 +14,19 @@ export default {
 			'2xl': '1536px'
 		},
 		extend: {
+			/*
+			  App stacking scale (CSS vars in src/index.css :root).
+			  modal > sidebar > action-sheet > mobile-nav > map-controls > map
+			*/
 			zIndex: {
-				map: '0',
-				'map-controls': '10',
-				'mobile-nav': '30',
-				sidebar: '40',
-				header: '50',
-				'action-sheet': '50',
-				modal: '100',
-				toast: '110'
+				map: 'var(--z-map)',
+				'map-controls': 'var(--z-map-controls)',
+				'mobile-nav': 'var(--z-mobile-nav)',
+				'action-sheet': 'var(--z-action-sheet)',
+				sidebar: 'var(--z-sidebar)',
+				header: 'var(--z-header)',
+				modal: 'var(--z-modal)',
+				toast: 'var(--z-toast)'
 			},
 			colors: {
 				background: 'hsl(var(--background))',

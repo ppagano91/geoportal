@@ -2118,11 +2118,11 @@ export function MapViewer(): JSX.Element {
   );
 
   return (
-    <div className="geoportal-map absolute inset-0 z-0 overflow-hidden">
+    <div className="geoportal-map absolute inset-0 z-map overflow-hidden">
       <div ref={mapContainerRef} className="absolute inset-0 h-full w-full" />
 
       {/* Izquierda: Dibujo (desktop/tablet) y Medición */}
-      <div className="absolute top-3 left-3 z-map-controls">
+      <div className="absolute top-3 left-3 z-map-controls isolate">
         <MapControls showDraw={!isMobile} />
       </div>
 
@@ -2187,6 +2187,7 @@ export function MapViewer(): JSX.Element {
             buildingsOn={buildings3DEnabled}
             onToggleTerrain={toggleTerrain}
             onToggleBuildings={() => setBuildings3DEnabled((prev) => !prev)}
+            dismiss={!!mapActionSheet || !!featureInfo}
           />
         ) : (
           <>
@@ -2242,7 +2243,7 @@ export function MapViewer(): JSX.Element {
         )}
       </div>
       {!isMobile && (
-      <div className="absolute bottom-3 right-3 z-map-controls">
+      <div className="absolute bottom-3 right-3 z-map-controls isolate">
         <MiniMap styleUrl={styleUrl} />
       </div>
       )}
@@ -2307,7 +2308,6 @@ export function MapViewer(): JSX.Element {
           lat={mapActionSheet.lat}
           onCopyCoordinates={() => {
             void handleCopyCoordinates(mapActionSheet.lng, mapActionSheet.lat);
-            setMapActionSheet(null);
           }}
           onGetInfo={() => {
             void handleGetInfo(
