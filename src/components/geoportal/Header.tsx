@@ -6,6 +6,7 @@ import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import { Moon, SunMedium, PanelLeft } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useResponsive } from "../../hooks/useResponsive";
+import logoGeoPortal from "../../assets/images/favicon_geoportal.png";
 
 export function Header(): JSX.Element {
   const ctx = useContext(GeoPortalContext)!;
@@ -24,7 +25,7 @@ export function Header(): JSX.Element {
   }, []);
   return (
     <header className="relative z-header w-full shrink-0 border-b bg-card/95 backdrop-blur-md">
-      <div className="mx-auto flex h-12 items-center gap-2 px-3 tablet:h-14">
+      <div className="mx-auto flex h-12 items-center gap-2 px-3 tablet:h-14 justify-between">
         {!isMobile && (
           <Button
             variant="ghost"
@@ -37,13 +38,21 @@ export function Header(): JSX.Element {
             title="Panel de capas"
             onClick={() => dispatch({ type: "toggleSidebar" })}
           >
-            <PanelLeft className="h-5 w-5" />
+            <img
+            src={logoGeoPortal}
+            alt="GeoPortal"
+            className="geoportal-logo"
+          />
           </Button>
         )}
-        {isMobile && (
-          <div className="truncate text-sm font-semibold">GeoPortal</div>
-        )}
-        {!isMobile && (
+        {/* <div className="geoportal-logo-wrap">
+          <img
+            src={logoGeoPortal}
+            alt="GeoPortal"
+            className="geoportal-logo"
+          />
+        </div> */}
+        {/* {!isMobile && (
           <div className="flex-1">
             <Input
               placeholder="Buscar capas..."
@@ -53,8 +62,8 @@ export function Header(): JSX.Element {
               }
             />
           </div>
-        )}
-        {isMobile && <div className="flex-1" />}
+        )} */}
+        <div className="flex-1" />
         <div className="flex items-center gap-2">
           <SunMedium className="h-4 w-4 opacity-70" />
           <Switch
@@ -66,7 +75,7 @@ export function Header(): JSX.Element {
           />
           <Moon className="h-4 w-4 opacity-70" />
         </div>
-        <div className="ml-3 relative" ref={menuRef}>
+        {/* <div className="ml-3 relative" ref={menuRef}>
           <button
             type="button"
             onClick={(e) => {
@@ -92,7 +101,7 @@ export function Header(): JSX.Element {
               </button>
             </div>
           )}
-        </div>
+        </div> */}
       </div>
     </header>
   );

@@ -2,7 +2,7 @@
 import { useControl } from "react-map-gl/maplibre";
 
 export default function DrawControl({
-  position,
+  position = "top-right",
   onCreate = () => {},
   onUpdate = () => {},
   onDelete = () => {},

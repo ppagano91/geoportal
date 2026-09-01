@@ -20,7 +20,7 @@ export function computeLayerStats(fc: GeoJSON.FeatureCollection): LayerStats {
 	}
 
 	for (const f of fc.features) {
-		if (f.geometry?.type && f.geometry?.coordinates) {
+		if (f.geometry?.type && 'coordinates' in f.geometry) {
 			visitCoords((f.geometry as any).coordinates)
 		}
 		const props = f.properties ?? {}
