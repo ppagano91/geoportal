@@ -135,6 +135,18 @@ export type BaseMapStyle = 'streets' | 'satellite' | 'topo' | 'dark'
 /** Modo de la herramienta de medición. No se persiste. */
 export type MeasureMode = 'none' | 'distance' | 'area'
 
+/**
+ * Selección estadística temporal (multi-feature).
+ * Independiente de `selectedFeatureId` (edición / atributos / menú contextual).
+ * No se persiste.
+ */
+export type StatisticsSelection = {
+	layerId: string
+	featureIds: Array<string | number>
+	/** Identifica la barra/bin activo para toggle visual. */
+	key: string
+}
+
 export interface GeoPortalState {
 	layers: Layer[]
 	/** Capa seleccionada en el sidebar (propiedades, estilo, acciones). No implica edición. */
@@ -162,6 +174,8 @@ export interface GeoPortalState {
 	wfsDialogOpen: boolean
 	/** Panel de estadísticas de capa. No persiste resultados; son datos derivados. */
 	statisticsOpen?: boolean
+	/** Features resaltadas desde el gráfico de estadísticas. Temporal; no persiste. */
+	statisticsSelection?: StatisticsSelection
 	compareEnabled?: boolean
 	terrainEnabled?: boolean
 }

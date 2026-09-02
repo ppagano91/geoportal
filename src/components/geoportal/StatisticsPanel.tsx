@@ -1,12 +1,14 @@
-import React, { useContext, useEffect, useMemo, useState } from "react";
-import { BarChart3, X } from "lucide-react";
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { BarChart3, Eye, X } from "lucide-react";
 import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import { Label } from "../ui/Label";
 import { Select } from "../ui/Select";
 import { ScrollArea } from "../ui/ScrollArea";
+import { Button } from "../ui/Button";
 import { cn } from "../../utils/cn";
 import { useResponsive } from "../../hooks/useResponsive";
 import { fieldTypeLabel } from "../../persistence/editableLayers";
+import { zoomToFeatureCollection } from "../../utils/geo";
 import {
 	calculateCategoricalStats,
 	calculateDateStats,
@@ -20,6 +22,8 @@ import {
 	getLayerFields,
 	isStatisticsSourceLayer,
 	type AnalyzableField,
+	type CategoryBucket,
+	type HistogramBin,
 } from "../../statistics/statistics";
 import {
 	areaUnitForTotal,
@@ -32,7 +36,18 @@ import {
 	type LineGeometryStats,
 	type PolygonGeometryStats,
 } from "../../statistics/geometryStatistics";
+import {
+	categorySelectionKey,
+	getFeatureIdsForCategory,
+	getFeatureIdsForHistogramBin,
+	getSelectedFeatures,
+	histogramSelectionKey,
+	toFeatureIdSet,
+	type FeatureId,
+} from "../../statistics/selection";
 import { CategoryChart, HistogramChart } from "./StatisticsChart";
+
+type StatsScope = "all" | "selection";
 
 function Kpi({
 	label,
@@ -200,12 +215,66 @@ function GeometrySection({ stats }: { stats: GeometryStats }): JSX.Element {
 	);
 }
 
+function ScopeToggle({
+	scope,
+	onChange,
+	selectionCount,
+	disabledSelection,
+}: {
+	scope: StatsScope;
+	onChange: (scope: StatsScope) => void;
+	selectionCount: number;
+	disabledSelection: boolean;
+}): JSX.Element {
+	return (
+		<div
+			role="group"
+			aria-label="Ámbito de estadísticas"
+			className="grid grid-cols-2 gap-1 rounded-md border bg-muted/40 p-1"
+		>
+			<button
+				type="button"
+				aria-pressed={scope === "all"}
+				className={cn(
+					"h-9 rounded px-2 text-xs font-medium tablet:h-8",
+					scope === "all"
+						? "bg-background text-foreground shadow-sm"
+						: "text-muted-foreground hover:text-foreground",
+				)}
+				onClick={() => onChange("all")}
+			>
+				Toda la capa
+			</button>
+			<button
+				type="button"
+				aria-pressed={scope === "selection"}
+				disabled={disabledSelection}
+				className={cn(
+					"h-9 rounded px-2 text-xs font-medium tablet:h-8 disabled:pointer-events-none disabled:opacity-50",
+					scope === "selection"
+						? "bg-background text-foreground shadow-sm"
+						: "text-muted-foreground hover:text-foreground",
+				)}
+				onClick={() => onChange("selection")}
+			>
+				Selección ({formatStatNumber(selectionCount, 0)})
+			</button>
+		</div>
+	);
+}
+
 function FieldStatsBody({
 	field,
 	values,
+	activeKey,
+	onSelectCategory,
+	onSelectBin,
 }: {
 	field: AnalyzableField;
 	values: unknown[];
+	activeKey?: string;
+	onSelectCategory: (bucket: CategoryBucket) => void;
+	onSelectBin: (bin: HistogramBin) => void;
 }): JSX.Element {
 	const general = useMemo(() => calculateGeneralFieldStats(values), [values]);
 	const numeric = useMemo(
@@ -270,25 +339,47 @@ function FieldStatsBody({
 
 			{field.type === "number" && histogram.length > 0 ? (
 				<Section title="Distribución">
-					<HistogramChart bins={histogram} />
+					<HistogramChart
+						bins={histogram}
+						activeKey={activeKey}
+						onSelect={onSelectBin}
+					/>
 				</Section>
 			) : null}
 
 			{categorical ? (
 				<Section title="Distribución">
-					<CategoryChart buckets={categorical.buckets} />
+					<CategoryChart
+						buckets={categorical.buckets}
+						activeKey={activeKey}
+						onSelect={onSelectCategory}
+					/>
 					<ul className="grid gap-1 text-sm">
-						{categorical.buckets.map((bucket) => (
-							<li
-								key={bucket.value}
-								className="flex items-baseline justify-between gap-3"
-							>
-								<span className="min-w-0 truncate">{bucket.value}</span>
-								<span className="shrink-0 tabular-nums text-muted-foreground">
-									{formatStatNumber(bucket.count, 0)} · {formatPercentage(bucket.percentage)}
-								</span>
-							</li>
-						))}
+						{categorical.buckets.map((bucket) => {
+							const key = categorySelectionKey(bucket);
+							const active = activeKey === key;
+							return (
+								<li key={key}>
+									<button
+										type="button"
+										title={`Seleccionar ${bucket.value}`}
+										aria-pressed={active}
+										className={cn(
+											"flex min-h-9 w-full items-baseline justify-between gap-3 rounded-md px-1.5 text-left tablet:min-h-7",
+											active
+												? "bg-foreground/10 font-medium"
+												: "hover:bg-muted/80",
+										)}
+										onClick={() => onSelectCategory(bucket)}
+									>
+										<span className="min-w-0 truncate">{bucket.value}</span>
+										<span className="shrink-0 tabular-nums text-muted-foreground">
+											{formatStatNumber(bucket.count, 0)} · {formatPercentage(bucket.percentage)}
+										</span>
+									</button>
+								</li>
+							);
+						})}
 					</ul>
 				</Section>
 			) : null}
@@ -311,10 +402,12 @@ function FieldStatsBody({
 
 export function StatisticsPanel(): JSX.Element | null {
 	const ctx = useContext(GeoPortalContext)!;
-	const { state, dispatch } = ctx;
+	const { state, dispatch, mapRef } = ctx;
 	const { isMobile } = useResponsive();
 	const [layerId, setLayerId] = useState("");
 	const [fieldName, setFieldName] = useState("");
+	const [scope, setScope] = useState<StatsScope>("all");
+	const prevLayerFieldRef = useRef({ layerId: "", fieldName: "" });
 
 	const layers = useMemo(
 		() => state.layers.filter(isStatisticsSourceLayer),
@@ -354,17 +447,109 @@ export function StatisticsPanel(): JSX.Element | null {
 		});
 	}, [fields, layerId]);
 
+	useEffect(() => {
+		const prev = prevLayerFieldRef.current;
+		if (prev.layerId === layerId && prev.fieldName === fieldName) return;
+		const hadPrevious = prev.layerId !== "" || prev.fieldName !== "";
+		prevLayerFieldRef.current = { layerId, fieldName };
+		if (hadPrevious) {
+			dispatch({ type: "clearStatisticsSelection" });
+		}
+	}, [dispatch, fieldName, layerId]);
+
 	const selectedField = fields.find((field) => field.name === fieldName);
-	const features = selectedLayer?.data?.features ?? [];
+	const allFeatures = selectedLayer?.data?.features ?? [];
+	const selectionForLayer =
+		state.statisticsSelection?.layerId === layerId
+			? state.statisticsSelection
+			: undefined;
+	const selectedIdSet = useMemo(
+		() => toFeatureIdSet(selectionForLayer?.featureIds),
+		[selectionForLayer],
+	);
+	const selectedFeatures = useMemo(
+		() => getSelectedFeatures(allFeatures, selectedIdSet),
+		[allFeatures, selectedIdSet],
+	);
+
+	useEffect(() => {
+		if (
+			selectionForLayer &&
+			selectionForLayer.featureIds.length > 0 &&
+			selectedFeatures.length === 0
+		) {
+			dispatch({ type: "clearStatisticsSelection" });
+		}
+	}, [dispatch, selectedFeatures.length, selectionForLayer]);
+
+	useEffect(() => {
+		if (selectedFeatures.length > 0) setScope("selection");
+		else setScope("all");
+	}, [selectedFeatures.length, selectionForLayer?.key]);
+
+	const analysisFeatures =
+		scope === "selection" && selectedFeatures.length > 0
+			? selectedFeatures
+			: allFeatures;
 	const fieldValues = useMemo(
 		() =>
-			selectedField ? collectFieldValues(features, selectedField.name) : [],
-		[features, selectedField],
+			selectedField
+				? collectFieldValues(analysisFeatures, selectedField.name)
+				: [],
+		[analysisFeatures, selectedField],
 	);
 	const geometryStats = useMemo(
-		() => (selectedLayer ? calculateGeometryStats(features) : null),
-		[features, selectedLayer],
+		() => (selectedLayer ? calculateGeometryStats(analysisFeatures) : null),
+		[analysisFeatures, selectedLayer],
 	);
+	const selectionPercentage =
+		allFeatures.length === 0
+			? 0
+			: (selectedFeatures.length / allFeatures.length) * 100;
+
+	function applySelection(key: string, ids: FeatureId[]) {
+		if (!layerId) return;
+		if (selectionForLayer?.key === key) {
+			dispatch({ type: "clearStatisticsSelection" });
+			return;
+		}
+		if (ids.length === 0) {
+			dispatch({ type: "clearStatisticsSelection" });
+			return;
+		}
+		dispatch({
+			type: "setStatisticsSelection",
+			selection: { layerId, featureIds: ids, key },
+		});
+	}
+
+	function handleSelectCategory(bucket: CategoryBucket) {
+		if (!selectedField) return;
+		applySelection(
+			categorySelectionKey(bucket),
+			getFeatureIdsForCategory(allFeatures, selectedField.name, bucket),
+		);
+	}
+
+	function handleSelectBin(bin: HistogramBin) {
+		if (!selectedField) return;
+		applySelection(
+			histogramSelectionKey(bin),
+			getFeatureIdsForHistogramBin(allFeatures, selectedField.name, bin),
+		);
+	}
+
+	function viewSelection() {
+		const map = mapRef.current;
+		if (!map || selectedFeatures.length === 0) return;
+		zoomToFeatureCollection(map, {
+			type: "FeatureCollection",
+			features: selectedFeatures,
+		});
+		if (isMobile) {
+			dispatch({ type: "closeStatistics", keepSelection: true });
+		}
+	}
 
 	if (!state.statisticsOpen) return null;
 
@@ -379,6 +564,7 @@ export function StatisticsPanel(): JSX.Element | null {
 					value: field.name,
 					label: `${field.name} (${fieldTypeLabel(field.type)})`,
 				}));
+	const hasSelection = selectedFeatures.length > 0;
 
 	return (
 		<aside
@@ -437,14 +623,69 @@ export function StatisticsPanel(): JSX.Element | null {
 								? "No hay capas vectoriales disponibles"
 								: "Seleccione una capa"}
 						</EmptyNote>
-					) : features.length === 0 ? (
+					) : allFeatures.length === 0 ? (
 						<EmptyNote>La capa no contiene entidades</EmptyNote>
 					) : (
 						<>
+							{hasSelection ? (
+								<Section title="Selección actual">
+									<div className="grid gap-2">
+										<div className="grid grid-cols-2 gap-2">
+											<Kpi
+												label="Entidades"
+												value={formatStatNumber(selectedFeatures.length, 0)}
+											/>
+											<Kpi
+												label="% de la capa"
+												value={formatPercentage(selectionPercentage)}
+											/>
+										</div>
+										<div className="flex flex-wrap gap-2">
+											<Button
+												type="button"
+												variant="outline"
+												size="sm"
+												className="max-md:h-11"
+												onClick={() =>
+													dispatch({ type: "clearStatisticsSelection" })
+												}
+											>
+												Limpiar selección
+											</Button>
+											<Button
+												type="button"
+												variant="secondary"
+												size="sm"
+												className="max-md:h-11"
+												onClick={viewSelection}
+											>
+												<Eye className="mr-1.5 h-3.5 w-3.5" />
+												Ver selección
+											</Button>
+										</div>
+									</div>
+								</Section>
+							) : null}
+
+							{hasSelection ? (
+								<ScopeToggle
+									scope={scope}
+									onChange={setScope}
+									selectionCount={selectedFeatures.length}
+									disabledSelection={!hasSelection}
+								/>
+							) : null}
+
 							{!selectedField ? (
 								<EmptyNote>La capa no contiene atributos analizables</EmptyNote>
 							) : (
-								<FieldStatsBody field={selectedField} values={fieldValues} />
+								<FieldStatsBody
+									field={selectedField}
+									values={fieldValues}
+									activeKey={selectionForLayer?.key}
+									onSelectCategory={handleSelectCategory}
+									onSelectBin={handleSelectBin}
+								/>
 							)}
 							{geometryStats ? <GeometrySection stats={geometryStats} /> : null}
 						</>

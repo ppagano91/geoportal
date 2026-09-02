@@ -43,16 +43,20 @@ export type NumericStats = {
 };
 
 export type HistogramBin = {
-	start: number;
-	end: number;
+	min: number;
+	max: number;
 	count: number;
 	label: string;
+	isLast: boolean;
 };
 
 export type CategoryBucket = {
 	value: string;
 	count: number;
 	percentage: number;
+	/** Claves formateadas que representa esta barra. En "Otros" son las categorías agrupadas. */
+	values: string[];
+	isOther?: boolean;
 };
 
 export type CategoricalStats = {
@@ -60,6 +64,8 @@ export type CategoricalStats = {
 	truncated: boolean;
 	otherCount: number;
 };
+
+export const OTHER_CATEGORY_LABEL = "Otros";
 
 export type DateStats = {
 	count: number;
@@ -248,6 +254,16 @@ function formatBinEdge(value: number): string {
 	}).format(value);
 }
 
+/** Intervalos [min, max) salvo el último, que es [min, max]. */
+export function valueInHistogramBin(
+	value: number,
+	bin: Pick<HistogramBin, "min" | "max" | "isLast">,
+): boolean {
+	if (!Number.isFinite(value)) return false;
+	if (bin.isLast) return value >= bin.min && value <= bin.max;
+	return value >= bin.min && value < bin.max;
+}
+
 export function calculateHistogram(values: unknown[]): HistogramBin[] {
 	const numbers = finiteNumbers(values);
 	if (numbers.length === 0) return [];
@@ -257,10 +273,11 @@ export function calculateHistogram(values: unknown[]): HistogramBin[] {
 	if (min === max) {
 		return [
 			{
-				start: min,
-				end: max,
+				min,
+				max,
 				count: numbers.length,
 				label: formatBinEdge(min),
+				isLast: true,
 			},
 		];
 	}
@@ -286,21 +303,21 @@ export function calculateHistogram(values: unknown[]): HistogramBin[] {
 	binCount = Math.max(1, Math.min(12, binCount));
 
 	const bins: HistogramBin[] = Array.from({ length: binCount }, (_, index) => {
-		const binStart = start + index * width;
-		const binEnd = index === binCount - 1 ? end : start + (index + 1) * width;
+		const isLast = index === binCount - 1;
+		const binMin = start + index * width;
+		const binMax = isLast ? end : start + (index + 1) * width;
 		return {
-			start: binStart,
-			end: binEnd,
+			min: binMin,
+			max: binMax,
 			count: 0,
-			label: `${formatBinEdge(binStart)}–${formatBinEdge(binEnd)}`,
+			label: `${formatBinEdge(binMin)}–${formatBinEdge(binMax)}`,
+			isLast,
 		};
 	});
 
 	for (const value of numbers) {
-		let index = Math.floor((value - start) / width);
-		if (index < 0) index = 0;
-		if (index >= binCount) index = binCount - 1;
-		bins[index].count += 1;
+		const index = bins.findIndex((bin) => valueInHistogramBin(value, bin));
+		if (index >= 0) bins[index].count += 1;
 	}
 	return bins;
 }
@@ -334,6 +351,7 @@ export function calculateCategoricalStats(
 				value,
 				count,
 				percentage: total === 0 ? 0 : (count / total) * 100,
+				values: [value],
 			})),
 			truncated: false,
 			otherCount: 0,
@@ -341,18 +359,22 @@ export function calculateCategoricalStats(
 	}
 
 	const head = ranked.slice(0, topN);
-	const otherCount = ranked.slice(topN).reduce((sum, [, count]) => sum + count, 0);
+	const tail = ranked.slice(topN);
+	const otherCount = tail.reduce((sum, [, count]) => sum + count, 0);
 	return {
 		buckets: [
 			...head.map(([value, count]) => ({
 				value,
 				count,
 				percentage: (count / total) * 100,
+				values: [value],
 			})),
 			{
-				value: "Otros",
+				value: OTHER_CATEGORY_LABEL,
 				count: otherCount,
 				percentage: (otherCount / total) * 100,
+				values: tail.map(([value]) => value),
+				isOther: true,
 			},
 		],
 		truncated: true,

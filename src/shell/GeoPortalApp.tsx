@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { Map as MapLibreMap } from "maplibre-gl";
-import type { GeoPortalState, Layer } from "../types/geoportal";
+import type { GeoPortalState, Layer, StatisticsSelection } from "../types/geoportal";
+import { getFeatureId } from "../statistics/selection";
 import type { MobilePanel } from "../config/breakpoints";
 import { Header } from "../components/geoportal/Header";
 import { Sidebar, type SidebarTab } from "../components/geoportal/Sidebar";
@@ -79,7 +80,9 @@ type Action =
   | { type: "openAttributeTable"; id: string }
   | { type: "closeAttributeTable" }
   | { type: "toggleStatistics" }
-  | { type: "closeStatistics" };
+  | { type: "closeStatistics"; keepSelection?: boolean }
+  | { type: "setStatisticsSelection"; selection: GeoPortalState["statisticsSelection"] }
+  | { type: "clearStatisticsSelection" };
 
 const initialState: GeoPortalState = {
   layers: [],
@@ -95,6 +98,27 @@ const initialState: GeoPortalState = {
   layerSettingsOpen: false,
   statisticsOpen: false,
 };
+
+function pruneStatisticsSelection(
+  selection: StatisticsSelection | undefined,
+  layers: Layer[],
+): StatisticsSelection | undefined {
+  if (!selection || selection.featureIds.length === 0) return undefined;
+  const layer = layers.find((item) => item.id === selection.layerId);
+  const features = layer?.data?.features;
+  if (!features || features.length === 0) return undefined;
+  const existing = new Set<string>();
+  for (const feature of features) {
+    const id = getFeatureId(feature);
+    if (id != null) existing.add(String(id));
+  }
+  const featureIds = selection.featureIds.filter((id) =>
+    existing.has(String(id)),
+  );
+  if (featureIds.length === 0) return undefined;
+  if (featureIds.length === selection.featureIds.length) return selection;
+  return { ...selection, featureIds };
+}
 
 function nextDrawingLayerName(layers: Layer[]): string {
   const used = new Set(
@@ -216,6 +240,10 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
           state.attributeTableLayerId === action.id
             ? undefined
             : state.attributeTableLayerId,
+        statisticsSelection:
+          state.statisticsSelection?.layerId === action.id
+            ? undefined
+            : state.statisticsSelection,
         drawMode: leavingEdit ? "none" : state.drawMode,
       };
     }
@@ -226,13 +254,19 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
           l.id === action.id ? { ...l, visible: action.visible } : l,
         ),
       };
-    case "updateLayer":
+    case "updateLayer": {
+      const layers = state.layers.map((l) =>
+        l.id === action.id ? { ...l, ...action.patch } : l,
+      );
       return {
         ...state,
-        layers: state.layers.map((l) =>
-          l.id === action.id ? { ...l, ...action.patch } : l,
+        layers,
+        statisticsSelection: pruneStatisticsSelection(
+          state.statisticsSelection,
+          layers,
         ),
       };
+    }
     case "setActiveLayer":
       return {
         ...state,
@@ -359,10 +393,15 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
       if (featureCollectionsEqual(state.drawings, action.drawings)) {
         return state;
       }
+      const layers = upsertDrawingSessionLayer(state.layers, action.drawings);
       return {
         ...state,
         drawings: action.drawings,
-        layers: upsertDrawingSessionLayer(state.layers, action.drawings),
+        layers,
+        statisticsSelection: pruneStatisticsSelection(
+          state.statisticsSelection,
+          layers,
+        ),
       };
     }
     case "replaceLayerFeatures": {
@@ -372,12 +411,17 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
       if (target.data && featureCollectionsEqual(target.data, data)) {
         return state;
       }
+      const layers = state.layers.map((layer) =>
+        layer.id === action.id ? patchEditableLayerData(layer, data) : layer,
+      );
       return {
         ...state,
-        layers: state.layers.map((layer) =>
-          layer.id === action.id ? patchEditableLayerData(layer, data) : layer,
-        ),
+        layers,
         ...selectionIfFeatureMissing(state, action.id, data),
+        statisticsSelection: pruneStatisticsSelection(
+          state.statisticsSelection,
+          layers,
+        ),
       };
     }
     case "removeLayerFeature": {
@@ -390,12 +434,17 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
         ),
       };
       if (data.features.length === target.data.features.length) return state;
+      const layers = state.layers.map((layer) =>
+        layer.id === action.layerId
+          ? patchEditableLayerData(layer, data)
+          : layer,
+      );
       return {
         ...state,
-        layers: state.layers.map((layer) =>
-          layer.id === action.layerId
-            ? patchEditableLayerData(layer, data)
-            : layer,
+        layers,
+        statisticsSelection: pruneStatisticsSelection(
+          state.statisticsSelection,
+          layers,
         ),
         selectedFeatureId:
           state.selectedFeatureLayerId === action.layerId &&
@@ -420,15 +469,21 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
     case "replaceTempDrawing":
       // handled inside MapViewer; state storage optional; skip for now
       return state;
-    case "clearDrawings":
+    case "clearDrawings": {
+      const layers = upsertDrawingSessionLayer(
+        state.layers,
+        emptyFeatureCollection(),
+      );
       return {
         ...state,
         drawings: emptyFeatureCollection(),
-        layers: upsertDrawingSessionLayer(
-          state.layers,
-          emptyFeatureCollection(),
+        layers,
+        statisticsSelection: pruneStatisticsSelection(
+          state.statisticsSelection,
+          layers,
         ),
       };
+    }
     case "saveDrawingsAsLayer": {
       if (state.editingLayerId) {
         return state;
@@ -445,14 +500,19 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
         data: drawingData,
         color: color_code,
       });
+      const layers = [
+        ...state.layers.filter((l) => l.id !== DRAWING_SESSION_LAYER_ID),
+        layer,
+      ];
       return {
         ...state,
-        layers: [
-          ...state.layers.filter((l) => l.id !== DRAWING_SESSION_LAYER_ID),
-          layer,
-        ],
+        layers,
         drawings: emptyFeatureCollection(),
         drawMode: "none",
+        statisticsSelection: pruneStatisticsSelection(
+          state.statisticsSelection,
+          layers,
+        ),
       };
     }
     case "moveLayer": {
@@ -484,10 +544,30 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
       if (!state.attributeTableLayerId) return state;
       return { ...state, attributeTableLayerId: undefined };
     case "toggleStatistics":
-      return { ...state, statisticsOpen: !state.statisticsOpen };
+      if (state.statisticsOpen) {
+        return { ...state, statisticsOpen: false, statisticsSelection: undefined };
+      }
+      return { ...state, statisticsOpen: true };
     case "closeStatistics":
       if (!state.statisticsOpen) return state;
-      return { ...state, statisticsOpen: false };
+      return {
+        ...state,
+        statisticsOpen: false,
+        statisticsSelection: action.keepSelection
+          ? state.statisticsSelection
+          : undefined,
+      };
+    case "setStatisticsSelection": {
+      const next = action.selection;
+      if (!next || next.featureIds.length === 0) {
+        if (!state.statisticsSelection) return state;
+        return { ...state, statisticsSelection: undefined };
+      }
+      return { ...state, statisticsSelection: next };
+    }
+    case "clearStatisticsSelection":
+      if (!state.statisticsSelection) return state;
+      return { ...state, statisticsSelection: undefined };
     default:
       return state;
   }

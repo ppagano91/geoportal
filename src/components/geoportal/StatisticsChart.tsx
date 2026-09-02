@@ -3,6 +3,7 @@ import {
 	Bar,
 	BarChart,
 	CartesianGrid,
+	Cell,
 	ResponsiveContainer,
 	Tooltip,
 	XAxis,
@@ -10,10 +11,16 @@ import {
 } from "recharts";
 import type { CategoryBucket, HistogramBin } from "../../statistics/statistics";
 import { formatPercentage, formatStatNumber } from "../../statistics/statistics";
+import {
+	categorySelectionKey,
+	histogramSelectionKey,
+} from "../../statistics/selection";
+import { useResponsive } from "../../hooks/useResponsive";
 
 const AXIS = "hsl(var(--muted-foreground))";
 const GRID = "hsl(var(--border))";
 const BAR = "hsl(var(--primary))";
+const BAR_ACTIVE = "hsl(var(--foreground))";
 const TOOLTIP_STYLE: React.CSSProperties = {
 	backgroundColor: "hsl(var(--popover))",
 	border: "1px solid hsl(var(--border))",
@@ -22,7 +29,27 @@ const TOOLTIP_STYLE: React.CSSProperties = {
 	fontSize: 12,
 };
 
-export function HistogramChart({ bins }: { bins: HistogramBin[] }): JSX.Element {
+function chartDatum<T extends object>(data: unknown): T | undefined {
+	if (!data || typeof data !== "object") return undefined;
+	const record = data as { payload?: unknown };
+	if (record.payload && typeof record.payload === "object") {
+		return record.payload as T;
+	}
+	return data as T;
+}
+
+type HistogramChartProps = {
+	bins: HistogramBin[];
+	activeKey?: string;
+	onSelect?: (bin: HistogramBin) => void;
+};
+
+export function HistogramChart({
+	bins,
+	activeKey,
+	onSelect,
+}: HistogramChartProps): JSX.Element {
+	const { isMobile } = useResponsive();
 	return (
 		<div className="h-52 w-full min-w-0">
 			<ResponsiveContainer width="100%" height="100%">
@@ -50,19 +77,52 @@ export function HistogramChart({ bins }: { bins: HistogramBin[] }): JSX.Element 
 						]}
 						labelFormatter={(label) => `Intervalo ${String(label)}`}
 					/>
-					<Bar dataKey="count" fill={BAR} radius={[4, 4, 0, 0]} maxBarSize={36} />
+					<Bar
+						dataKey="count"
+						radius={[4, 4, 0, 0]}
+						maxBarSize={isMobile ? 44 : 36}
+						cursor={onSelect ? "pointer" : undefined}
+						onClick={(data) => {
+							const bin = chartDatum<HistogramBin>(data);
+							if (!bin || typeof bin.min !== "number" || !onSelect) return;
+							onSelect(bin);
+						}}
+					>
+						{bins.map((bin) => {
+							const key = histogramSelectionKey(bin);
+							const active = activeKey === key;
+							return (
+								<Cell
+									key={key}
+									fill={active ? BAR_ACTIVE : BAR}
+									cursor={onSelect ? "pointer" : undefined}
+									role="button"
+									tabIndex={-1}
+									aria-label={`Seleccionar intervalo ${bin.label}, ${formatStatNumber(bin.count, 0)} entidades`}
+								/>
+							);
+						})}
+					</Bar>
 				</BarChart>
 			</ResponsiveContainer>
 		</div>
 	);
 }
 
+type CategoryChartProps = {
+	buckets: CategoryBucket[];
+	activeKey?: string;
+	onSelect?: (bucket: CategoryBucket) => void;
+};
+
 export function CategoryChart({
 	buckets,
-}: {
-	buckets: CategoryBucket[];
-}): JSX.Element {
-	const height = Math.max(180, buckets.length * 32);
+	activeKey,
+	onSelect,
+}: CategoryChartProps): JSX.Element {
+	const { isMobile } = useResponsive();
+	const rowHeight = isMobile ? 44 : 32;
+	const height = Math.max(180, buckets.length * rowHeight);
 	return (
 		<div className="w-full min-w-0" style={{ height }}>
 			<ResponsiveContainer width="100%" height="100%">
@@ -96,7 +156,32 @@ export function CategoryChart({
 							return [`${count} (${pct})`, "Entidades"];
 						}}
 					/>
-					<Bar dataKey="count" fill={BAR} radius={[0, 4, 4, 0]} maxBarSize={22} />
+					<Bar
+						dataKey="count"
+						radius={[0, 4, 4, 0]}
+						maxBarSize={isMobile ? 32 : 22}
+						cursor={onSelect ? "pointer" : undefined}
+						onClick={(data) => {
+							const bucket = chartDatum<CategoryBucket>(data);
+							if (!bucket || !bucket.values || !onSelect) return;
+							onSelect(bucket);
+						}}
+					>
+						{buckets.map((bucket) => {
+							const key = categorySelectionKey(bucket);
+							const active = activeKey === key;
+							return (
+								<Cell
+									key={key}
+									fill={active ? BAR_ACTIVE : BAR}
+									cursor={onSelect ? "pointer" : undefined}
+									role="button"
+									tabIndex={-1}
+									aria-label={`Seleccionar ${bucket.value}, ${formatStatNumber(bucket.count, 0)} entidades`}
+								/>
+							);
+						})}
+					</Bar>
 				</BarChart>
 			</ResponsiveContainer>
 		</div>

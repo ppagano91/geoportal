@@ -33,6 +33,7 @@ import { MapControls } from "./MapControls";
 import { View3DControl } from "./View3DControl";
 import { env } from "../../config/env";
 import { useResponsive } from "../../hooks/useResponsive";
+import { getSelectedFeatures, toFeatureIdSet } from "../../statistics/selection";
 import buildingsIcon from "../../assets/images/buildings.svg";
 import reliefIcon from "../../assets/images/relief.svg";
 import {
@@ -917,6 +918,142 @@ function syncSelectedFeatureHighlight(
   }
 }
 
+const STATS_SELECTION_SOURCE_ID = "gp-stats-selection";
+const STATS_SELECTION_LAYER_IDS = [
+  "gp-stats-selected-fill",
+  "gp-stats-selected-line-halo",
+  "gp-stats-selected-line",
+  "gp-stats-selected-point-halo",
+  "gp-stats-selected-point",
+] as const;
+
+function highlightFeaturesCollection(
+  features: GeoJSON.Feature[],
+): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: features
+      .filter((feature) => feature.geometry != null)
+      .map((feature) => ({
+        type: "Feature" as const,
+        id: feature.id,
+        geometry: feature.geometry as GeoJSON.Geometry,
+        properties: {},
+      })),
+  };
+}
+
+function ensureStatisticsSelectionLayers(map: Map) {
+  if (!map.getSource(STATS_SELECTION_SOURCE_ID)) {
+    map.addSource(STATS_SELECTION_SOURCE_ID, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+  }
+  if (!map.getLayer("gp-stats-selected-fill")) {
+    map.addLayer({
+      id: "gp-stats-selected-fill",
+      type: "fill",
+      source: STATS_SELECTION_SOURCE_ID,
+      filter: [
+        "in",
+        ["geometry-type"],
+        ["literal", ["Polygon", "MultiPolygon"]],
+      ],
+      paint: {
+        "fill-color": "#facc15",
+        "fill-opacity": 0.32,
+      },
+    });
+  }
+  if (!map.getLayer("gp-stats-selected-line-halo")) {
+    map.addLayer({
+      id: "gp-stats-selected-line-halo",
+      type: "line",
+      source: STATS_SELECTION_SOURCE_ID,
+      filter: [
+        "in",
+        ["geometry-type"],
+        ["literal", ["LineString", "MultiLineString", "Polygon", "MultiPolygon"]],
+      ],
+      paint: {
+        "line-color": "#ffffff",
+        "line-width": 7,
+        "line-opacity": 0.95,
+      },
+    });
+  }
+  if (!map.getLayer("gp-stats-selected-line")) {
+    map.addLayer({
+      id: "gp-stats-selected-line",
+      type: "line",
+      source: STATS_SELECTION_SOURCE_ID,
+      filter: [
+        "in",
+        ["geometry-type"],
+        ["literal", ["LineString", "MultiLineString", "Polygon", "MultiPolygon"]],
+      ],
+      paint: {
+        "line-color": "#eab308",
+        "line-width": 3.5,
+      },
+    });
+  }
+  if (!map.getLayer("gp-stats-selected-point-halo")) {
+    map.addLayer({
+      id: "gp-stats-selected-point-halo",
+      type: "circle",
+      source: STATS_SELECTION_SOURCE_ID,
+      filter: [
+        "in",
+        ["geometry-type"],
+        ["literal", ["Point", "MultiPoint"]],
+      ],
+      paint: {
+        "circle-radius": 12,
+        "circle-color": "#ffffff",
+        "circle-opacity": 0.95,
+      },
+    });
+  }
+  if (!map.getLayer("gp-stats-selected-point")) {
+    map.addLayer({
+      id: "gp-stats-selected-point",
+      type: "circle",
+      source: STATS_SELECTION_SOURCE_ID,
+      filter: [
+        "in",
+        ["geometry-type"],
+        ["literal", ["Point", "MultiPoint"]],
+      ],
+      paint: {
+        "circle-radius": 8,
+        "circle-color": "#facc15",
+        "circle-stroke-color": "#854d0e",
+        "circle-stroke-width": 2,
+      },
+    });
+  }
+}
+
+function syncStatisticsSelectionHighlight(
+  map: Map,
+  features: GeoJSON.Feature[],
+) {
+  try {
+    ensureStatisticsSelectionLayers(map);
+    const source = map.getSource(STATS_SELECTION_SOURCE_ID) as
+      | maplibregl.GeoJSONSource
+      | undefined;
+    source?.setData(highlightFeaturesCollection(features));
+    for (const id of STATS_SELECTION_LAYER_IDS) {
+      if (map.getLayer(id)) map.moveLayer(id);
+    }
+  } catch {
+    // style may not be ready
+  }
+}
+
 function featureIdFromHit(
   hit: maplibregl.MapGeoJSONFeature,
 ): string | number | undefined {
@@ -1049,6 +1186,7 @@ export function MapViewer(): JSX.Element {
   const featureAttributesOpenRef = useRef(!!state.featureAttributesOpen);
   const attributeTableLayerIdRef = useRef(state.attributeTableLayerId);
   const selectedHighlightRef = useRef<GeoJSON.Feature | null>(null);
+  const statsHighlightRef = useRef<GeoJSON.Feature[]>([]);
   const [mapContextMenu, setMapContextMenu] = useState<{
     x: number;
     y: number;
@@ -1102,6 +1240,16 @@ export function MapViewer(): JSX.Element {
     selectedLayer?.visible
       ? featureFromLayer(selectedLayer, state.selectedFeatureId) ?? null
       : null;
+  const statsSelectionLayer = state.layers.find(
+    (item) => item.id === state.statisticsSelection?.layerId,
+  );
+  statsHighlightRef.current =
+    statsSelectionLayer?.visible && statsSelectionLayer.data
+      ? getSelectedFeatures(
+          statsSelectionLayer.data.features,
+          toFeatureIdSet(state.statisticsSelection?.featureIds),
+        )
+      : [];
 
   // const [features, setFeatures] = useState({});
 
@@ -1195,6 +1343,7 @@ export function MapViewer(): JSX.Element {
     }
     moveTerraDrawLayersToTop(map);
     moveMeasureLayersToTop(map);
+    syncStatisticsSelectionHighlight(map, statsHighlightRef.current);
     syncSelectedFeatureHighlight(map, selectedHighlightRef.current);
   };
 
@@ -1862,6 +2011,14 @@ export function MapViewer(): JSX.Element {
     state.selectedFeatureLayerId,
     runWhenStyleReady,
   ]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    runWhenStyleReady(map, () =>
+      syncStatisticsSelectionHighlight(map, statsHighlightRef.current),
+    );
+  }, [state.statisticsSelection, state.layers, runWhenStyleReady]);
 
   useEffect(() => {
     drawEngineRef.current?.setMode(state.drawMode);
