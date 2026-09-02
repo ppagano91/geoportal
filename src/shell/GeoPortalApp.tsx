@@ -10,6 +10,7 @@ import { WfsDialog } from "../components/geoportal/WfsDialog";
 import { LayerSettingsDialog } from "../components/geoportal/LayerSettingsDialog";
 import { FeatureAttributesDialog } from "../components/geoportal/FeatureAttributesDialog";
 import { AttributeTable } from "../components/geoportal/AttributeTable";
+import { StatisticsPanel } from "../components/geoportal/StatisticsPanel";
 import { MobileBottomNav } from "../components/geoportal/MobileBottomNav";
 import { useResponsive } from "../hooks/useResponsive";
 import { cn } from "../utils/cn";
@@ -76,7 +77,9 @@ type Action =
   | { type: "openWfsDialog" }
   | { type: "closeWfsDialog" }
   | { type: "openAttributeTable"; id: string }
-  | { type: "closeAttributeTable" };
+  | { type: "closeAttributeTable" }
+  | { type: "toggleStatistics" }
+  | { type: "closeStatistics" };
 
 const initialState: GeoPortalState = {
   layers: [],
@@ -90,6 +93,7 @@ const initialState: GeoPortalState = {
   wmsDialogOpen: false,
   wfsDialogOpen: false,
   layerSettingsOpen: false,
+  statisticsOpen: false,
 };
 
 function nextDrawingLayerName(layers: Layer[]): string {
@@ -479,6 +483,11 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
     case "closeAttributeTable":
       if (!state.attributeTableLayerId) return state;
       return { ...state, attributeTableLayerId: undefined };
+    case "toggleStatistics":
+      return { ...state, statisticsOpen: !state.statisticsOpen };
+    case "closeStatistics":
+      if (!state.statisticsOpen) return state;
+      return { ...state, statisticsOpen: false };
     default:
       return state;
   }
@@ -586,16 +595,23 @@ export function GeoPortalApp(): JSX.Element {
   }, [mode, isDesktop, isMobile]);
 
   useEffect(() => {
+    if (state.statisticsOpen && isMobile) {
+      setMobilePanel(null);
+    }
+  }, [state.statisticsOpen, isMobile]);
+
+  useEffect(() => {
     const lock =
       isMobile &&
       (mobilePanel === "layers" ||
         mobilePanel === "wms" ||
-        mobilePanel === "wfs");
+        mobilePanel === "wfs" ||
+        !!state.statisticsOpen);
     document.body.classList.toggle("gp-scroll-lock", lock);
     return () => {
       document.body.classList.remove("gp-scroll-lock");
     };
-  }, [isMobile, mobilePanel]);
+  }, [isMobile, mobilePanel, state.statisticsOpen]);
 
   const drawEngineRef = useRef<DrawEngine | null>(null);
   const measureEngineRef = useRef<MeasureEngine | null>(null);
@@ -728,12 +744,16 @@ export function GeoPortalApp(): JSX.Element {
                 />
               </aside>
             )}
+            <StatisticsPanel />
           </div>
           {isMobile && (
             <MobileBottomNav
               active={mobilePanel}
               onChange={(panel) => {
                 setMobilePanel(panel);
+                if (panel != null) {
+                  dispatch({ type: "closeStatistics" });
+                }
                 dispatch({ type: "setSidebarOpen", open: panel != null });
               }}
             />

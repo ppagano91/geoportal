@@ -1,7 +1,7 @@
 import React, { useContext, useState } from "react";
 import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import { Button } from "../ui/Button";
-import { PencilRuler, Eraser, Save, Trash2, Ruler } from "lucide-react";
+import { PencilRuler, Eraser, Save, Trash2, Ruler, BarChart3 } from "lucide-react";
 import pointIcon from "../../assets/images/point.svg";
 import lineIcon from "../../assets/images/line.svg";
 import polygonIcon from "../../assets/images/polygon.svg";
@@ -259,6 +259,22 @@ export function MapControls({
             </Button>
           </>
         )}
+      </div>
+      <div className={cn("surface flex flex-col items-center p-0.5", col)}>
+        <button
+          type="button"
+          className={cn(
+            "flex items-center justify-center text-xs",
+            btn,
+            state.statisticsOpen && "rounded-md bg-primary text-primary-foreground",
+          )}
+          title="Estadísticas"
+          aria-label="Estadísticas de capa"
+          aria-pressed={!!state.statisticsOpen}
+          onClick={() => dispatch({ type: "toggleStatistics" })}
+        >
+          <BarChart3 className="h-4 w-4" />
+        </button>
       </div>
       {showDraw && openDraw && (
         <div className="surface max-w-[16rem] px-2 py-1.5 text-xs text-muted-foreground">

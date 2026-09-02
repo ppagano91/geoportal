@@ -160,6 +160,8 @@ export interface GeoPortalState {
 	drawings: GeoJSON.FeatureCollection
 	wmsDialogOpen: boolean
 	wfsDialogOpen: boolean
+	/** Panel de estadísticas de capa. No persiste resultados; son datos derivados. */
+	statisticsOpen?: boolean
 	compareEnabled?: boolean
 	terrainEnabled?: boolean
 }
