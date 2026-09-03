@@ -1,4 +1,4 @@
-import React, { useContext, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import { Button } from "../ui/Button";
 import { PencilRuler, Eraser, Save, Trash2, Ruler, BarChart3 } from "lucide-react";
@@ -14,6 +14,7 @@ import {
 } from "../../persistence/editableLayers";
 import { cn } from "../../utils/cn";
 import { useResponsive } from "../../hooks/useResponsive";
+import { AnalysisLensControl } from "./AnalysisLensControl";
 
 export function MapControls({
   showDraw = true,
@@ -27,6 +28,7 @@ export function MapControls({
   const [openMeasure, setOpenMeasure] = useState(false);
   const editable = getEditableLayerById(state.layers, state.editingLayerId);
   const measuring = state.measureMode !== "none";
+  const lensActive = !!state.analysisLens?.active;
   const allowedMode = editable
     ? geometryTypeToDrawMode(editable.geometryType)
     : undefined;
@@ -43,6 +45,12 @@ export function MapControls({
     }
     dispatch({ type: "setDrawMode", mode: next });
   }
+
+  useEffect(() => {
+    if (!lensActive) return;
+    setOpenDraw(false);
+    setOpenMeasure(false);
+  }, [lensActive]);
 
   function DrawModeIcon({
     src,
@@ -276,6 +284,7 @@ export function MapControls({
           <BarChart3 className="h-4 w-4" />
         </button>
       </div>
+      <AnalysisLensControl />
       {showDraw && openDraw && (
         <div className="surface max-w-[16rem] px-2 py-1.5 text-xs text-muted-foreground">
           {editable ? (

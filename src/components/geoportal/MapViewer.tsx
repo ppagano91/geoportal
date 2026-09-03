@@ -34,6 +34,10 @@ import { View3DControl } from "./View3DControl";
 import { env } from "../../config/env";
 import { useResponsive } from "../../hooks/useResponsive";
 import { getSelectedFeatures, toFeatureIdSet } from "../../statistics/selection";
+import { isMapUiEvent } from "../../analysis/lens";
+import { moveAnalysisLensLayersToTop } from "../../analysis/lensOverlay";
+import { AnalysisLensHud } from "./AnalysisLensHud";
+import { useAnalysisLens } from "./useAnalysisLens";
 import buildingsIcon from "../../assets/images/buildings.svg";
 import reliefIcon from "../../assets/images/relief.svg";
 import {
@@ -1179,6 +1183,7 @@ export function MapViewer(): JSX.Element {
   const skipInitialSetStyleRef = useRef(true);
   const drawModeRef = useRef(state.drawMode);
   const measureModeRef = useRef(state.measureMode);
+  const lensActiveRef = useRef(!!state.analysisLens?.active);
   const suppressDrawSyncRef = useRef(false);
   const terraDrawTargetIdRef = useRef<string | undefined>(undefined);
   const prevDrawTargetRef = useRef<string | undefined | null>(null);
@@ -1217,6 +1222,7 @@ export function MapViewer(): JSX.Element {
   const [terrainOn, setTerrainOn] = useState(false);
   const [buildings3DEnabled, setBuildings3DEnabled] = useState(false);
   const syncOperationalLayersRef = useRef<(map: Map) => void>(() => {});
+  const lensSyncRef = useRef<(map: Map) => void>(() => {});
   const editingLayer = getEditableLayerById(
     state.layers,
     state.editingLayerId,
@@ -1228,6 +1234,7 @@ export function MapViewer(): JSX.Element {
   const drawDocumentRef = useRef(drawDocument);
   drawModeRef.current = state.drawMode;
   measureModeRef.current = state.measureMode;
+  lensActiveRef.current = !!state.analysisLens?.active;
   editingLayerIdRef.current = editingLayerId;
   layersRef.current = state.layers;
   drawDocumentRef.current = drawDocument;
@@ -1250,6 +1257,17 @@ export function MapViewer(): JSX.Element {
           toFeatureIdSet(state.statisticsSelection?.featureIds),
         )
       : [];
+
+  const lensView = useAnalysisLens({
+    mapRef,
+    layers: state.layers,
+    lens: state.analysisLens,
+    isMobile,
+  });
+  lensSyncRef.current = (map) => {
+    lensView.syncOverlay(map);
+    moveAnalysisLensLayersToTop(map);
+  };
 
   // const [features, setFeatures] = useState({});
 
@@ -1345,6 +1363,7 @@ export function MapViewer(): JSX.Element {
     moveMeasureLayersToTop(map);
     syncStatisticsSelectionHighlight(map, statsHighlightRef.current);
     syncSelectedFeatureHighlight(map, selectedHighlightRef.current);
+    lensSyncRef.current(map);
   };
 
   useEffect(() => {
@@ -1379,6 +1398,7 @@ export function MapViewer(): JSX.Element {
 
     const handleMapContextMenu = (point: { x: number; y: number }) => {
       if (isMobileRef.current) return;
+      if (lensActiveRef.current) return;
       const lngLat = map.unproject([point.x, point.y]);
       const editableHit = findEditableFeatureAtPoint(
         map,
@@ -1421,6 +1441,7 @@ export function MapViewer(): JSX.Element {
     const onNativeContextMenu = (ev: MouseEvent) => {
       ev.preventDefault();
       ev.stopImmediatePropagation();
+      if (isMapUiEvent(ev)) return;
       const canvas = map.getCanvas();
       const rect = canvas.getBoundingClientRect();
       const x = ev.clientX - rect.left;
@@ -1455,6 +1476,8 @@ export function MapViewer(): JSX.Element {
     installRightClickGuard();
 
     const onMapClick = (event: maplibregl.MapMouseEvent) => {
+      if (isMapUiEvent(event.originalEvent)) return;
+      if (lensActiveRef.current) return;
       const tableLayerId = attributeTableLayerIdRef.current;
       if (tableLayerId) {
         const modeNow = drawModeRef.current;
@@ -2108,6 +2131,12 @@ export function MapViewer(): JSX.Element {
   }, [mapActionSheet]);
 
   useEffect(() => {
+    if (!state.analysisLens?.active) return;
+    setMapActionSheet(null);
+    setMapContextMenu(null);
+  }, [state.analysisLens?.active]);
+
+  useEffect(() => {
     if (!isMobile) {
       setMapActionSheet(null);
       return;
@@ -2277,6 +2306,17 @@ export function MapViewer(): JSX.Element {
   return (
     <div className="geoportal-map absolute inset-0 z-map overflow-hidden">
       <div ref={mapContainerRef} className="absolute inset-0 h-full w-full" />
+
+      {lensView.pointer && mapContainerRef.current ? (
+        <AnalysisLensHud
+          x={lensView.pointer.x}
+          y={lensView.pointer.y}
+          radiusPx={lensView.pointer.radiusPx}
+          radiusMeters={state.analysisLens?.radiusMeters ?? 250}
+          stats={lensView.stats}
+          container={mapContainerRef.current}
+        />
+      ) : null}
 
       {/* Izquierda: Dibujo (desktop/tablet) y Medición */}
       <div className="absolute top-3 left-3 z-map-controls isolate">

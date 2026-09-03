@@ -147,6 +147,17 @@ export type StatisticsSelection = {
 	key: string
 }
 
+/**
+ * Configuración del lente de análisis espacial.
+ * No incluye posición del cursor, features intersectadas ni estadísticas.
+ */
+export type AnalysisLensState = {
+	active: boolean
+	layerId?: string
+	radiusMeters: number
+	field?: string
+}
+
 export interface GeoPortalState {
 	layers: Layer[]
 	/** Capa seleccionada en el sidebar (propiedades, estilo, acciones). No implica edición. */
@@ -176,6 +187,11 @@ export interface GeoPortalState {
 	statisticsOpen?: boolean
 	/** Features resaltadas desde el gráfico de estadísticas. Temporal; no persiste. */
 	statisticsSelection?: StatisticsSelection
+	/**
+	 * Lente de análisis espacial. Temporal: no persiste cursor, hits ni resultados.
+	 * Independiente de `statisticsSelection` y de la selección de edición.
+	 */
+	analysisLens?: AnalysisLensState
 	compareEnabled?: boolean
 	terrainEnabled?: boolean
 }

@@ -2,6 +2,12 @@ import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { GeoPortalState, Layer, StatisticsSelection } from "../types/geoportal";
 import { getFeatureId } from "../statistics/selection";
+import {
+  defaultAnalysisLens,
+  pruneAnalysisLens,
+  resolveLensLayerId,
+  withLensInactive,
+} from "../analysis/lens";
 import type { MobilePanel } from "../config/breakpoints";
 import { Header } from "../components/geoportal/Header";
 import { Sidebar, type SidebarTab } from "../components/geoportal/Sidebar";
@@ -82,7 +88,9 @@ type Action =
   | { type: "toggleStatistics" }
   | { type: "closeStatistics"; keepSelection?: boolean }
   | { type: "setStatisticsSelection"; selection: GeoPortalState["statisticsSelection"] }
-  | { type: "clearStatisticsSelection" };
+  | { type: "clearStatisticsSelection" }
+  | { type: "toggleAnalysisLens" }
+  | { type: "setAnalysisLens"; patch: Partial<NonNullable<GeoPortalState["analysisLens"]>> };
 
 const initialState: GeoPortalState = {
   layers: [],
@@ -97,6 +105,7 @@ const initialState: GeoPortalState = {
   wfsDialogOpen: false,
   layerSettingsOpen: false,
   statisticsOpen: false,
+  analysisLens: defaultAnalysisLens(),
 };
 
 function pruneStatisticsSelection(
@@ -244,6 +253,7 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
           state.statisticsSelection?.layerId === action.id
             ? undefined
             : state.statisticsSelection,
+        analysisLens: pruneAnalysisLens(state.analysisLens, layers),
         drawMode: leavingEdit ? "none" : state.drawMode,
       };
     }
@@ -265,6 +275,7 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
           state.statisticsSelection,
           layers,
         ),
+        analysisLens: pruneAnalysisLens(state.analysisLens, layers),
       };
     }
     case "setActiveLayer":
@@ -290,6 +301,7 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
         editingLayerId: action.id,
         drawMode: geometryTypeToDrawMode(layer.geometryType),
         measureMode: "none",
+        analysisLens: withLensInactive(state.analysisLens),
       };
     }
     case "stopEditingLayer":
@@ -365,6 +377,10 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
         ...state,
         drawMode: action.mode,
         measureMode: action.mode === "none" ? state.measureMode : "none",
+        analysisLens:
+          action.mode === "none"
+            ? state.analysisLens
+            : withLensInactive(state.analysisLens),
       };
     }
     case "setMeasureMode": {
@@ -373,6 +389,10 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
         ...state,
         measureMode: action.mode,
         drawMode: action.mode === "none" ? state.drawMode : "none",
+        analysisLens:
+          action.mode === "none"
+            ? state.analysisLens
+            : withLensInactive(state.analysisLens),
       };
     }
     case "addDrawing": {
@@ -402,6 +422,7 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
           state.statisticsSelection,
           layers,
         ),
+        analysisLens: pruneAnalysisLens(state.analysisLens, layers),
       };
     }
     case "replaceLayerFeatures": {
@@ -422,6 +443,7 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
           state.statisticsSelection,
           layers,
         ),
+        analysisLens: pruneAnalysisLens(state.analysisLens, layers),
       };
     }
     case "removeLayerFeature": {
@@ -446,6 +468,7 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
           state.statisticsSelection,
           layers,
         ),
+        analysisLens: pruneAnalysisLens(state.analysisLens, layers),
         selectedFeatureId:
           state.selectedFeatureLayerId === action.layerId &&
           state.selectedFeatureId != null &&
@@ -482,6 +505,7 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
           state.statisticsSelection,
           layers,
         ),
+        analysisLens: pruneAnalysisLens(state.analysisLens, layers),
       };
     }
     case "saveDrawingsAsLayer": {
@@ -513,6 +537,7 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
           state.statisticsSelection,
           layers,
         ),
+        analysisLens: pruneAnalysisLens(state.analysisLens, layers),
       };
     }
     case "moveLayer": {
@@ -568,6 +593,46 @@ function reducer(state: GeoPortalState, action: Action): GeoPortalState {
     case "clearStatisticsSelection":
       if (!state.statisticsSelection) return state;
       return { ...state, statisticsSelection: undefined };
+    case "toggleAnalysisLens": {
+      const current = state.analysisLens ?? defaultAnalysisLens();
+      if (current.active) {
+        return { ...state, analysisLens: { ...current, active: false } };
+      }
+      const layerId = resolveLensLayerId(
+        state.layers,
+        current.layerId,
+        state.activeLayerId,
+      );
+      const next = pruneAnalysisLens(
+        {
+          ...current,
+          active: true,
+          layerId,
+        },
+        state.layers,
+      );
+      return {
+        ...state,
+        analysisLens: next,
+        drawMode: "none",
+        measureMode: "none",
+      };
+    }
+    case "setAnalysisLens": {
+      const current = state.analysisLens ?? defaultAnalysisLens();
+      const next = pruneAnalysisLens(
+        { ...current, ...action.patch },
+        state.layers,
+      );
+      if (!next) return { ...state, analysisLens: defaultAnalysisLens() };
+      const activating = next.active && !current.active;
+      return {
+        ...state,
+        analysisLens: next,
+        drawMode: activating ? "none" : state.drawMode,
+        measureMode: activating ? "none" : state.measureMode,
+      };
+    }
     default:
       return state;
   }

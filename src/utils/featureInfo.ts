@@ -129,6 +129,7 @@ function featureDedupeKey(layerId: string, hit: MapGeoJSONFeature): string {
 function isSkippedMapLibreLayer(layerId: string, sourceId: string): boolean {
 	if (layerId.startsWith(MEASURE_PREFIX) || sourceId.startsWith(MEASURE_PREFIX)) return true
 	if (layerId.startsWith('gp-selected') || sourceId === 'gp-selected-feature') return true
+	if (layerId.startsWith('gp-analysis-lens') || sourceId.startsWith('gp-analysis-lens')) return true
 	if (layerId.startsWith('wms-') || sourceId.startsWith('wms-src-')) return true
 	if (layerId === 'buildings-3d' || sourceId === 'vect-maptiler') return true
 	if (layerId.startsWith('cl-') || layerId.startsWith('cl-t-')) return true
