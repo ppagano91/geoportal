@@ -1,14 +1,10 @@
 import type { ExpressionSpecification } from "maplibre-gl";
+import { CATEGORICAL_MISSING_COLOR, categoricalColorAt } from "../styles/categoricalPalette";
 import {
-	CATEGORICAL_MISSING_COLOR,
-	CATEGORICAL_OTHER_COLOR,
-	categoricalColorAt,
-} from "../styles/categoricalPalette";
-import {
-	calculateCategoricalStats,
 	collectFieldValues,
+	formatCategoryValue,
 	getLayerFields,
-	OTHER_CATEGORY_LABEL,
+	isMissingValue,
 	type AnalyzableField,
 } from "../statistics/statistics";
 import type {
@@ -21,9 +17,11 @@ import type {
 
 export const MISSING_CATEGORY_LABEL = "Sin dato";
 
+/** Umbral de advertencia para campos numéricos de alta cardinalidad. No bloquea. */
+export const HIGH_CARDINALITY_WARNING_THRESHOLD = 20;
+
 export type CategorizedStyleRow =
 	| { kind: "value"; index: number; label: string; color: string }
-	| { kind: "other"; label: string; color: string }
 	| { kind: "missing"; label: string; color: string };
 
 export function isCategoricalSymbologyField(field: AnalyzableField): boolean {
@@ -54,35 +52,72 @@ export function isCategorizedStyleActive(
 	);
 }
 
+export function shouldWarnHighCardinality(
+	field: AnalyzableField | undefined,
+	uniqueCount: number,
+): boolean {
+	return field?.type === "number" && uniqueCount > HIGH_CARDINALITY_WARNING_THRESHOLD;
+}
+
+function categoryIdentityKey(value: CategoryValue): string {
+	if (typeof value === "boolean") return `b:${value}`;
+	if (typeof value === "number") return `n:${value}`;
+	return `s:${value}`;
+}
+
+function categoryTypeOrder(value: CategoryValue): number {
+	if (typeof value === "boolean") return 0;
+	if (typeof value === "number") return 1;
+	return 2;
+}
+
+function compareCategoryValues(a: CategoryValue, b: CategoryValue): number {
+	if (typeof a === "boolean" && typeof b === "boolean") {
+		return Number(a) - Number(b);
+	}
+	if (typeof a === "number" && typeof b === "number") {
+		return a - b;
+	}
+	if (typeof a === "string" && typeof b === "string") {
+		return a.localeCompare(b, "es");
+	}
+	return categoryTypeOrder(a) - categoryTypeOrder(b);
+}
+
+/**
+ * Valores únicos reales del campo, sin Top-N ni "Otros".
+ * Excluye null / undefined / "" ("Sin dato").
+ */
+export function getUniqueCategoryValues(values: unknown[]): CategoryValue[] {
+	const seen = new Set<string>();
+	const unique: CategoryValue[] = [];
+	for (const value of values) {
+		if (isMissingValue(value)) continue;
+		if (!isCategoryValue(value)) continue;
+		const key = categoryIdentityKey(value);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		unique.push(value);
+	}
+	unique.sort(compareCategoryValues);
+	return unique;
+}
+
 export function buildCategorizedStyle(
 	layer: Layer,
 	fieldName: string,
 ): CategorizedStyle {
 	const values = collectFieldValues(layer.data?.features ?? [], fieldName);
-	const stats = calculateCategoricalStats(values);
-	const categories: StyleCategory[] = [];
-	let otherColor: string | undefined;
-
-	for (const bucket of stats.buckets) {
-		if (bucket.isOther) {
-			otherColor = CATEGORICAL_OTHER_COLOR;
-			continue;
-		}
-		if (!isCategoryValue(bucket.rawValue)) continue;
-		categories.push({
-			value: bucket.rawValue,
-			label: bucket.value,
-			color: categoricalColorAt(categories.length),
-		});
-	}
-
-	const style: CategorizedStyle = {
+	const unique = getUniqueCategoryValues(values);
+	return {
 		field: fieldName,
-		categories,
+		categories: unique.map((value, index) => ({
+			value,
+			label: formatCategoryValue(value),
+			color: categoricalColorAt(index),
+		})),
 		fallbackColor: CATEGORICAL_MISSING_COLOR,
 	};
-	if (otherColor) style.otherColor = otherColor;
-	return style;
 }
 
 export function getCategorizedStyleRows(
@@ -94,13 +129,6 @@ export function getCategorizedStyleRows(
 		label: category.label,
 		color: category.color,
 	}));
-	if (style.otherColor) {
-		rows.push({
-			kind: "other",
-			label: OTHER_CATEGORY_LABEL,
-			color: style.otherColor,
-		});
-	}
 	rows.push({
 		kind: "missing",
 		label: MISSING_CATEGORY_LABEL,
@@ -112,7 +140,6 @@ export function getCategorizedStyleRows(
 export function categorizedColors(style: CategorizedStyle): string[] {
 	const colors = new Set<string>();
 	for (const category of style.categories) colors.add(category.color);
-	if (style.otherColor) colors.add(style.otherColor);
 	colors.add(style.fallbackColor);
 	return [...colors];
 }
@@ -126,33 +153,46 @@ function missingValueCondition(field: string): ExpressionSpecification {
 	] as unknown as ExpressionSpecification;
 }
 
+type MatchKind = "number" | "string" | "to-string";
+
+function categoryMatchKind(style: CategorizedStyle): MatchKind {
+	if (style.categories.length === 0) return "to-string";
+	const kinds = new Set(style.categories.map((category) => typeof category.value));
+	if (kinds.size === 1 && kinds.has("number")) return "number";
+	if (kinds.size === 1 && kinds.has("string")) return "string";
+	return "to-string";
+}
+
+function categoryMatchInput(field: string, kind: MatchKind): unknown {
+	if (kind === "to-string") return ["to-string", ["get", field]];
+	return ["get", field];
+}
+
+function categoryMatchLabel(value: CategoryValue, kind: MatchKind): string | number {
+	if (kind === "number" && typeof value === "number") return value;
+	return String(value);
+}
+
 /**
- * Expresión data-driven: `case` (Sin dato) + `match` (valores reales).
- * El default de `match` es "Otros" (overflow), nunca el literal `"Otros"`.
- * Booleanos se comparan como `"true"`/`"false"` vía `to-string`, no como "Sí"/"No".
+ * Expresión data-driven: `case` (Sin dato) + `match` (todas las categorías reales).
+ * Sin agrupación "Otros": el default de `match` es fallbackColor.
+ * Booleanos se comparan como `"true"`/`"false"`, no como "Sí"/"No".
+ * Números se comparan como número cuando todas las categorías son numéricas.
  */
 export function categorizedPropertyExpression(
 	style: CategorizedStyle,
 	outputForColor: (color: string) => string = (color) => color,
 ): string | ExpressionSpecification {
 	const missing = outputForColor(style.fallbackColor);
-	const overflow = outputForColor(style.otherColor ?? style.fallbackColor);
 
-	if (style.categories.length === 0) {
-		if (!style.otherColor) return missing;
-		return [
-			"case",
-			missingValueCondition(style.field),
-			missing,
-			overflow,
-		] as unknown as ExpressionSpecification;
-	}
+	if (style.categories.length === 0) return missing;
 
-	const matchExpr: unknown[] = ["match", ["to-string", ["get", style.field]]];
+	const kind = categoryMatchKind(style);
+	const matchExpr: unknown[] = ["match", categoryMatchInput(style.field, kind)];
 	for (const category of style.categories) {
-		matchExpr.push(String(category.value), outputForColor(category.color));
+		matchExpr.push(categoryMatchLabel(category.value, kind), outputForColor(category.color));
 	}
-	matchExpr.push(overflow);
+	matchExpr.push(missing);
 
 	return [
 		"case",

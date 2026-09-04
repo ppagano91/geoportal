@@ -1,4 +1,5 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
+import { AlertTriangle } from "lucide-react";
 import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "../ui/Dialog";
 import { Tabs, TabsList, TabsTrigger } from "../ui/Tabs";
@@ -16,8 +17,10 @@ import {
   buildCategorizedStyle,
   getCategoricalSymbologyFields,
   getCategorizedStyleRows,
+  shouldWarnHighCardinality,
   type CategorizedStyleRow,
 } from "../../utils/categorizedStyle";
+import { cn } from "../../utils/cn";
 import type {
   CategorizedStyle,
   GeometryType,
@@ -90,10 +93,28 @@ function InfoRow({
 function ColorInput({
   value,
   onChange,
+  variant = "default",
 }: {
   value: string;
   onChange: (value: string) => void;
+  variant?: "default" | "swatch";
 }): JSX.Element {
+  if (variant === "swatch") {
+    return (
+      <input
+        type="color"
+        aria-label="Color de categoría"
+        className={cn(
+          "h-7 w-7 shrink-0 cursor-pointer appearance-none rounded-sm border border-border bg-background p-0",
+          "hover:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "[&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-[2px] [&::-webkit-color-swatch]:border-0",
+          "[&::-moz-color-swatch]:rounded-[2px] [&::-moz-color-swatch]:border-0",
+        )}
+        value={toHex(value)}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
+  }
   return (
     <Input
       type="color"
@@ -160,13 +181,11 @@ export function LayerSettingsDialog(): JSX.Element | null {
     if (!layer || layer.styleMode !== "categorized") return;
     if (categoricalFields.length === 0) return;
     const current = layer.categorizedStyle?.field;
-    if (
-      current &&
-      layer.categorizedStyle &&
-      categoricalFields.some((field) => field.name === current)
-    ) {
-      return;
-    }
+    const fieldStillValid =
+      !!current &&
+      !!layer.categorizedStyle &&
+      categoricalFields.some((field) => field.name === current);
+    if (fieldStillValid && !layer.categorizedStyle?.otherColor) return;
     const field =
       current && categoricalFields.some((item) => item.name === current)
         ? current
@@ -211,6 +230,13 @@ export function LayerSettingsDialog(): JSX.Element | null {
   const categorizedRows = currentLayer.categorizedStyle
     ? getCategorizedStyleRows(currentLayer.categorizedStyle)
     : [];
+  const selectedCategoricalField = categoricalFields.find(
+    (field) => field.name === currentLayer.categorizedStyle?.field,
+  );
+  const showCardinalityWarning = shouldWarnHighCardinality(
+    selectedCategoricalField,
+    currentLayer.categorizedStyle?.categories.length ?? 0,
+  );
 
   function setStyleMode(mode: StyleMode) {
     if (mode === "simple") {
@@ -235,7 +261,8 @@ export function LayerSettingsDialog(): JSX.Element | null {
       return;
     }
     const categorizedStyle =
-      currentLayer.categorizedStyle?.field === field
+      currentLayer.categorizedStyle?.field === field &&
+      !currentLayer.categorizedStyle.otherColor
         ? currentLayer.categorizedStyle
         : buildCategorizedStyle(currentLayer, field);
     dispatch({
@@ -264,8 +291,6 @@ export function LayerSettingsDialog(): JSX.Element | null {
           index === row.index ? { ...category, color } : category,
         ),
       };
-    } else if (row.kind === "other") {
-      next = { ...current, otherColor: color };
     } else {
       next = { ...current, fallbackColor: color };
     }
@@ -517,9 +542,29 @@ export function LayerSettingsDialog(): JSX.Element | null {
                               <h4 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                                 Categorías
                               </h4>
+                              {showCardinalityWarning && (
+                                <div className="flex gap-2 rounded-md border bg-muted/50 px-2.5 py-2 text-sm">
+                                  <AlertTriangle
+                                    className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+                                    aria-hidden
+                                  />
+                                  <div className="min-w-0 grid gap-0.5">
+                                    <p className="text-foreground">
+                                      Este campo contiene{" "}
+                                      {currentLayer.categorizedStyle?.categories
+                                        .length ?? 0}{" "}
+                                      valores únicos.
+                                    </p>
+                                    <p className="text-muted-foreground">
+                                      Para variables numéricas continuas se
+                                      recomienda utilizar simbología graduada.
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
                               {layer.categorizedStyle ? (
-                                <div className="max-h-48 overflow-x-hidden overflow-y-auto">
-                                  <ul className="grid gap-1.5">
+                                <div className="max-h-72 overflow-x-hidden overflow-y-auto">
+                                  <ul className="grid gap-1">
                                     {categorizedRows.map((row) => (
                                       <li
                                         key={
@@ -530,12 +575,16 @@ export function LayerSettingsDialog(): JSX.Element | null {
                                         className="flex min-w-0 items-center gap-2"
                                       >
                                         <ColorInput
+                                          variant="swatch"
                                           value={row.color}
                                           onChange={(color) =>
                                             setCategoryColor(row, color)
                                           }
                                         />
-                                        <span className="min-w-0 truncate text-sm">
+                                        <span
+                                          className="min-w-0 flex-1 truncate text-sm"
+                                          title={row.label}
+                                        >
                                           {row.label}
                                         </span>
                                       </li>

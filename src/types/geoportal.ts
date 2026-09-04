@@ -47,14 +47,15 @@ export interface StyleCategory {
 
 /**
  * Simbología categorizada a nivel de capa (un campo, todos los tipos geométricos).
- * `categories` son valores discretos; "Otros" (overflow) y "Sin dato" no van ahí.
+ * `categories` son todos los valores discretos. "Sin dato" no va ahí.
+ * `otherColor` es legado (Top-N); las categorías nuevas no lo generan ni lo usan.
  */
 export interface CategorizedStyle {
 	field: string
 	categories: StyleCategory[]
 	/** Color de features sin dato (`null` / `undefined` / `""`). */
 	fallbackColor: string
-	/** Color del overflow Top-N. Ausente si no hay agrupación. No es el valor literal `"Otros"`. */
+	/** @deprecated Overflow Top-N de la etapa 1. No se genera ni se muestra. */
 	otherColor?: string
 }
 

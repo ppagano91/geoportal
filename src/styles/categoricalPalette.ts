@@ -17,9 +17,6 @@ export const CATEGORICAL_PALETTE = [
 
 export const CATEGORICAL_PALETTE_SIZE = CATEGORICAL_PALETTE.length;
 
-/** Overflow Top-N ("Otros"). Independiente de un valor literal llamado "Otros". */
-export const CATEGORICAL_OTHER_COLOR = "#64748b";
-
 /** Features sin dato (`null` / `undefined` / `""`). */
 export const CATEGORICAL_MISSING_COLOR = "#94a3b8";
 
