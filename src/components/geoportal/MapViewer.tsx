@@ -143,16 +143,24 @@ const BASEMAPS = {
     version: 8,
     glyphs: STYLE_GLYPHS,
     sources: {
-      carto: {
+      argenmapDark: {
         type: "raster",
+        scheme: "tms",
         tiles: [
-          "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}.png",
+          "https://wms.ign.gob.ar/geoserver/gwc/service/tms/1.0.0/argenmap_oscuro@EPSG%3A3857@png/{z}/{x}/{y}.png",
         ],
         tileSize: 256,
-        attribution: "© Stadia Maps",
+        attribution:
+          "© Instituto Geográfico Nacional de la República Argentina",
       } as any,
     },
-    layers: [{ id: "carto", type: "raster", source: "carto" } as any],
+    layers: [
+      {
+        id: "argenmap-dark",
+        type: "raster",
+        source: "argenmapDark",
+      } as any,
+    ],
   } as any,
 } as const;
 
