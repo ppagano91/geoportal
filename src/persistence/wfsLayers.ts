@@ -1,4 +1,5 @@
 import type {
+	CategorizedStyle,
 	ClusterConfig,
 	EditableLayer,
 	GeometryType,
@@ -6,6 +7,7 @@ import type {
 	LineStyle,
 	PointStyle,
 	PolygonStyle,
+	StyleMode,
 	WfsLayer,
 } from '../types/geoportal'
 import {
@@ -19,6 +21,7 @@ import {
 	collectGeometryTypes,
 	primaryGeometryType,
 } from '../utils/wfs'
+import { applyPersistedCategorizedStyle } from '../utils/categorizedStyle'
 
 export const WFS_LAYERS_STORAGE_KEY = 'geoportal:wfs-layers:v1'
 export const WFS_LAYERS_VERSION = 1 as const
@@ -56,6 +59,8 @@ type WfsLayerMetadata = {
 	pointStyle?: PointStyle
 	lineStyle?: LineStyle
 	polygonStyle?: PolygonStyle
+	styleMode?: StyleMode
+	categorizedStyle?: CategorizedStyle
 	cluster?: WfsLayer['cluster']
 }
 
@@ -79,6 +84,8 @@ export function createWfsLayer(options: {
 	pointStyle?: PointStyle
 	lineStyle?: LineStyle
 	polygonStyle?: PolygonStyle
+	styleMode?: StyleMode
+	categorizedStyle?: CategorizedStyle
 	cluster?: WfsLayer['cluster']
 }): WfsLayer {
 	const color = options.color ?? DEFAULT_WFS_COLOR
@@ -122,6 +129,8 @@ export function createWfsLayer(options: {
 			strokeColor: color,
 			strokeWidth: 1.5,
 		},
+		styleMode: options.styleMode,
+		categorizedStyle: options.categorizedStyle,
 		cluster: options.cluster,
 	}
 }
@@ -212,12 +221,15 @@ function withCopiedWfsStyle(layer: EditableLayer, source: WfsLayer): EditableLay
 	const pointStyle = cloneJson(source.pointStyle)
 	const lineStyle = cloneJson(source.lineStyle)
 	const polygonStyle = cloneJson(source.polygonStyle)
+	const categorizedStyle = cloneJson(source.categorizedStyle)
 	const cluster = cloneJson(source.cluster)
 	return {
 		...layer,
 		pointStyle: pointStyle ?? layer.pointStyle,
 		lineStyle: lineStyle ?? layer.lineStyle,
 		polygonStyle: polygonStyle ?? layer.polygonStyle,
+		styleMode: source.styleMode,
+		categorizedStyle: categorizedStyle ?? layer.categorizedStyle,
 		cluster: cluster ?? layer.cluster,
 	}
 }
@@ -327,6 +339,8 @@ function toMetadata(layer: WfsLayer): WfsLayerMetadata {
 	if (layer.pointStyle) meta.pointStyle = layer.pointStyle
 	if (layer.lineStyle) meta.lineStyle = layer.lineStyle
 	if (layer.polygonStyle) meta.polygonStyle = layer.polygonStyle
+	if (layer.styleMode) meta.styleMode = layer.styleMode
+	if (layer.categorizedStyle) meta.categorizedStyle = layer.categorizedStyle
 	if (layer.cluster) meta.cluster = layer.cluster
 	return meta
 }
@@ -360,7 +374,7 @@ function normalizePersistedWfsLayer(value: unknown): WfsLayer | null {
 	if (typeof value.wfsUrl !== 'string' || value.wfsUrl.trim() === '') return null
 	if (typeof value.wfsTypeName !== 'string' || value.wfsTypeName.trim() === '') return null
 
-	return createWfsLayer({
+	const layer = createWfsLayer({
 		id: value.id,
 		name: value.name,
 		visible: value.visible,
@@ -377,6 +391,8 @@ function normalizePersistedWfsLayer(value: unknown): WfsLayer | null {
 		cluster: normalizeCluster(value.cluster),
 		data: EMPTY_FEATURE_COLLECTION,
 	})
+	applyPersistedCategorizedStyle(layer, value)
+	return layer
 }
 
 function serializePayload(layers: WfsLayerMetadata[]): string {

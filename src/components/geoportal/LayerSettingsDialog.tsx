@@ -1,4 +1,4 @@
-import React, { useContext, useMemo, useState } from "react";
+import React, { useContext, useEffect, useMemo, useState } from "react";
 import { GeoPortalContext } from "../../shell/GeoPortalApp";
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "../ui/Dialog";
 import { Tabs, TabsList, TabsTrigger } from "../ui/Tabs";
@@ -12,7 +12,19 @@ import {
   collectGeometryTypes,
   geometryFamilies,
 } from "../../utils/wfs";
-import type { GeometryType, LineStyle, PointStyle } from "../../types/geoportal";
+import {
+  buildCategorizedStyle,
+  getCategoricalSymbologyFields,
+  getCategorizedStyleRows,
+  type CategorizedStyleRow,
+} from "../../utils/categorizedStyle";
+import type {
+  CategorizedStyle,
+  GeometryType,
+  LineStyle,
+  PointStyle,
+  StyleMode,
+} from "../../types/geoportal";
 
 function toHex(s: string): string {
   return /^#/.test(s) ? s : `#${s}`;
@@ -139,33 +151,130 @@ export function LayerSettingsDialog(): JSX.Element | null {
     return state.layers.find((l) => l.id === state.activeLayerId);
   }, [state.layers, state.activeLayerId, state.layerSettingsOpen]);
   const [tab, setTab] = useState<"style" | "info">("style");
+  const categoricalFields = useMemo(
+    () => (layer ? getCategoricalSymbologyFields(layer) : []),
+    [layer],
+  );
+
+  useEffect(() => {
+    if (!layer || layer.styleMode !== "categorized") return;
+    if (categoricalFields.length === 0) return;
+    const current = layer.categorizedStyle?.field;
+    if (
+      current &&
+      layer.categorizedStyle &&
+      categoricalFields.some((field) => field.name === current)
+    ) {
+      return;
+    }
+    const field =
+      current && categoricalFields.some((item) => item.name === current)
+        ? current
+        : categoricalFields[0].name;
+    dispatch({
+      type: "updateLayer",
+      id: layer.id,
+      patch: { categorizedStyle: buildCategorizedStyle(layer, field) },
+    });
+  }, [layer, categoricalFields, dispatch]);
   const open = !!layer;
   if (!open || !layer) return null;
+  const currentLayer = layer;
 
-  const isWfs = layer.type === "wfs";
-  const detectedTypes: GeometryType[] = layer.data
-    ? collectGeometryTypes(layer.data)
-    : layer.geometryType
-      ? [layer.geometryType]
+  const isWfs = currentLayer.type === "wfs";
+  const detectedTypes: GeometryType[] = currentLayer.data
+    ? collectGeometryTypes(currentLayer.data)
+    : currentLayer.geometryType
+      ? [currentLayer.geometryType]
       : [];
   const families = isWfs
     ? geometryFamilies(detectedTypes)
     : { point: false, line: false, polygon: false };
   const isPoint =
     families.point ||
-    layer.geometryType === "Point" ||
-    layer.geometryType === "MultiPoint";
+    currentLayer.geometryType === "Point" ||
+    currentLayer.geometryType === "MultiPoint";
   const isLine =
     families.line ||
-    layer.geometryType === "LineString" ||
-    layer.geometryType === "MultiLineString";
+    currentLayer.geometryType === "LineString" ||
+    currentLayer.geometryType === "MultiLineString";
   const isPolygon =
     families.polygon ||
-    layer.geometryType === "Polygon" ||
-    layer.geometryType === "MultiPolygon";
+    currentLayer.geometryType === "Polygon" ||
+    currentLayer.geometryType === "MultiPolygon";
 
-  const fields = layer.fields ?? [];
+  const fields = currentLayer.fields ?? [];
   const close = () => dispatch({ type: "closeLayerSettings" });
+  const styleMode: StyleMode =
+    currentLayer.styleMode === "categorized" ? "categorized" : "simple";
+  const showCategorizedUi = currentLayer.type !== "wms";
+  const categorizedRows = currentLayer.categorizedStyle
+    ? getCategorizedStyleRows(currentLayer.categorizedStyle)
+    : [];
+
+  function setStyleMode(mode: StyleMode) {
+    if (mode === "simple") {
+      dispatch({
+        type: "updateLayer",
+        id: currentLayer.id,
+        patch: { styleMode: "simple" },
+      });
+      return;
+    }
+    const currentField = currentLayer.categorizedStyle?.field;
+    const field =
+      currentField && categoricalFields.some((item) => item.name === currentField)
+        ? currentField
+        : categoricalFields[0]?.name;
+    if (!field) {
+      dispatch({
+        type: "updateLayer",
+        id: currentLayer.id,
+        patch: { styleMode: "categorized" },
+      });
+      return;
+    }
+    const categorizedStyle =
+      currentLayer.categorizedStyle?.field === field
+        ? currentLayer.categorizedStyle
+        : buildCategorizedStyle(currentLayer, field);
+    dispatch({
+      type: "updateLayer",
+      id: currentLayer.id,
+      patch: { styleMode: "categorized", categorizedStyle },
+    });
+  }
+
+  function setCategorizedField(field: string) {
+    dispatch({
+      type: "updateLayer",
+      id: currentLayer.id,
+      patch: { categorizedStyle: buildCategorizedStyle(currentLayer, field) },
+    });
+  }
+
+  function setCategoryColor(row: CategorizedStyleRow, color: string) {
+    const current = currentLayer.categorizedStyle;
+    if (!current) return;
+    let next: CategorizedStyle;
+    if (row.kind === "value") {
+      next = {
+        ...current,
+        categories: current.categories.map((category, index) =>
+          index === row.index ? { ...category, color } : category,
+        ),
+      };
+    } else if (row.kind === "other") {
+      next = { ...current, otherColor: color };
+    } else {
+      next = { ...current, fallbackColor: color };
+    }
+    dispatch({
+      type: "updateLayer",
+      id: currentLayer.id,
+      patch: { categorizedStyle: next },
+    });
+  }
 
   return (
     <Dialog
@@ -365,6 +474,85 @@ export function LayerSettingsDialog(): JSX.Element | null {
 
           {tab === "style" && (
               <div className="grid gap-4">
+                {showCategorizedUi && (
+                  <Section title="Simbología">
+                    <div className="grid gap-1.5">
+                      <PropertyRow label="Tipo de simbología">
+                        <Select
+                          value={styleMode}
+                          onValueChange={(value) => setStyleMode(value as StyleMode)}
+                          options={[
+                            { label: "Simple", value: "simple" },
+                            { label: "Categorizada", value: "categorized" },
+                          ]}
+                        />
+                      </PropertyRow>
+                      {styleMode === "categorized" &&
+                        (categoricalFields.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">
+                            No hay campos de texto, booleano o número para
+                            categorizar.
+                          </p>
+                        ) : (
+                          <>
+                            <PropertyRow label="Campo">
+                              <Select
+                                value={
+                                  layer.categorizedStyle?.field &&
+                                  categoricalFields.some(
+                                    (field) =>
+                                      field.name === layer.categorizedStyle?.field,
+                                  )
+                                    ? layer.categorizedStyle.field
+                                    : categoricalFields[0].name
+                                }
+                                onValueChange={setCategorizedField}
+                                options={categoricalFields.map((field) => ({
+                                  value: field.name,
+                                  label: `${field.name} (${fieldTypeLabel(field.type)})`,
+                                }))}
+                              />
+                            </PropertyRow>
+                            <div className="grid gap-1.5">
+                              <h4 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                                Categorías
+                              </h4>
+                              {layer.categorizedStyle ? (
+                                <div className="max-h-48 overflow-x-hidden overflow-y-auto">
+                                  <ul className="grid gap-1.5">
+                                    {categorizedRows.map((row) => (
+                                      <li
+                                        key={
+                                          row.kind === "value"
+                                            ? `value:${row.index}`
+                                            : row.kind
+                                        }
+                                        className="flex min-w-0 items-center gap-2"
+                                      >
+                                        <ColorInput
+                                          value={row.color}
+                                          onChange={(color) =>
+                                            setCategoryColor(row, color)
+                                          }
+                                        />
+                                        <span className="min-w-0 truncate text-sm">
+                                          {row.label}
+                                        </span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              ) : (
+                                <p className="text-sm text-muted-foreground">
+                                  Seleccione un campo para generar las categorías.
+                                </p>
+                              )}
+                            </div>
+                          </>
+                        ))}
+                    </div>
+                  </Section>
+                )}
                 {isPoint && layer.pointStyle && (
                   <>
                     <Section title="Símbolo">
@@ -394,23 +582,25 @@ export function LayerSettingsDialog(): JSX.Element | null {
                           />
                         </PropertyRow>
                         <ControlPair>
-                          <PropertyRow label="Color">
-                            <ColorInput
-                              value={layer.pointStyle.color}
-                              onChange={(color) =>
-                                dispatch({
-                                  type: "updateLayer",
-                                  id: layer.id,
-                                  patch: {
-                                    pointStyle: {
-                                      ...layer.pointStyle!,
-                                      color,
+                          {styleMode === "simple" && (
+                            <PropertyRow label="Color">
+                              <ColorInput
+                                value={layer.pointStyle.color}
+                                onChange={(color) =>
+                                  dispatch({
+                                    type: "updateLayer",
+                                    id: layer.id,
+                                    patch: {
+                                      pointStyle: {
+                                        ...layer.pointStyle!,
+                                        color,
+                                      },
                                     },
-                                  },
-                                })
-                              }
-                            />
-                          </PropertyRow>
+                                  })
+                                }
+                              />
+                            </PropertyRow>
+                          )}
                           <PropertyRow label="Color de borde">
                             <ColorInput
                               value={layer.pointStyle.strokeColor}
@@ -593,23 +783,25 @@ export function LayerSettingsDialog(): JSX.Element | null {
                   <>
                     <Section title="Símbolo">
                       <ControlPair>
-                        <PropertyRow label="Color">
-                          <ColorInput
-                            value={layer.lineStyle.color}
-                            onChange={(color) =>
-                              dispatch({
-                                type: "updateLayer",
-                                id: layer.id,
-                                patch: {
-                                  lineStyle: {
-                                    ...layer.lineStyle!,
-                                    color,
+                        {styleMode === "simple" && (
+                          <PropertyRow label="Color">
+                            <ColorInput
+                              value={layer.lineStyle.color}
+                              onChange={(color) =>
+                                dispatch({
+                                  type: "updateLayer",
+                                  id: layer.id,
+                                  patch: {
+                                    lineStyle: {
+                                      ...layer.lineStyle!,
+                                      color,
+                                    },
                                   },
-                                },
-                              })
-                            }
-                          />
-                        </PropertyRow>
+                                })
+                              }
+                            />
+                          </PropertyRow>
+                        )}
                         <PropertyRow label="Grosor">
                           <StyleSlider
                             value={layer.lineStyle.width}
@@ -664,23 +856,25 @@ export function LayerSettingsDialog(): JSX.Element | null {
                   <>
                     <Section title="Relleno">
                       <ControlPair>
-                        <PropertyRow label="Color">
-                          <ColorInput
-                            value={layer.polygonStyle.fillColor}
-                            onChange={(fillColor) =>
-                              dispatch({
-                                type: "updateLayer",
-                                id: layer.id,
-                                patch: {
-                                  polygonStyle: {
-                                    ...layer.polygonStyle!,
-                                    fillColor,
+                        {styleMode === "simple" && (
+                          <PropertyRow label="Color">
+                            <ColorInput
+                              value={layer.polygonStyle.fillColor}
+                              onChange={(fillColor) =>
+                                dispatch({
+                                  type: "updateLayer",
+                                  id: layer.id,
+                                  patch: {
+                                    polygonStyle: {
+                                      ...layer.polygonStyle!,
+                                      fillColor,
+                                    },
                                   },
-                                },
-                              })
-                            }
-                          />
-                        </PropertyRow>
+                                })
+                              }
+                            />
+                          </PropertyRow>
+                        )}
                         <PropertyRow label="Opacidad">
                           <StyleSlider
                             value={layer.polygonStyle.fillOpacity * 100}

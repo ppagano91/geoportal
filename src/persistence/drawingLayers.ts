@@ -12,6 +12,7 @@ import {
 	isEditableLayer,
 	normalizeLayerFields,
 } from "./editableLayers";
+import { applyPersistedCategorizedStyle } from "../utils/categorizedStyle";
 
 export const DRAWING_LAYERS_STORAGE_KEY = "geoportal:drawing-layers:v1";
 export const DRAWING_LAYERS_VERSION = 1 as const;
@@ -312,6 +313,7 @@ function normalizeEditableLayer(value: unknown): EditableLayer | null {
 	if (lineStyle) layer.lineStyle = lineStyle;
 	const polygonStyle = normalizePolygonStyle(value.polygonStyle);
 	if (polygonStyle) layer.polygonStyle = polygonStyle;
+	applyPersistedCategorizedStyle(layer, value);
 
 	return layer;
 }
@@ -344,6 +346,7 @@ function normalizeDrawingLayer(value: unknown): DrawingLayer | null {
 	if (lineStyle) layer.lineStyle = lineStyle;
 	const polygonStyle = normalizePolygonStyle(value.polygonStyle);
 	if (polygonStyle) layer.polygonStyle = polygonStyle;
+	applyPersistedCategorizedStyle(layer, value);
 
 	return layer;
 }

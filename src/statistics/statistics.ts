@@ -57,6 +57,8 @@ export type CategoryBucket = {
 	/** Claves formateadas que representa esta barra. En "Otros" son las categorías agrupadas. */
 	values: string[];
 	isOther?: boolean;
+	/** Valor original del atributo. Ausente en "Otros". */
+	rawValue?: unknown;
 };
 
 export type CategoricalStats = {
@@ -331,27 +333,33 @@ export function calculateCategoricalStats(
 	values: unknown[],
 	topN = 10,
 ): CategoricalStats {
-	const counts = new Map<string, number>();
+	const counts = new Map<string, { count: number; raw: unknown }>();
 	let total = 0;
 	for (const value of values) {
 		if (isMissingValue(value)) continue;
 		const key = formatCategoryValue(value);
-		counts.set(key, (counts.get(key) ?? 0) + 1);
+		const prev = counts.get(key);
+		if (prev) {
+			prev.count += 1;
+		} else {
+			counts.set(key, { count: 1, raw: value });
+		}
 		total += 1;
 	}
 
 	const ranked = [...counts.entries()].sort((a, b) => {
-		if (b[1] !== a[1]) return b[1] - a[1];
+		if (b[1].count !== a[1].count) return b[1].count - a[1].count;
 		return a[0].localeCompare(b[0], "es");
 	});
 
 	if (ranked.length <= topN) {
 		return {
-			buckets: ranked.map(([value, count]) => ({
+			buckets: ranked.map(([value, entry]) => ({
 				value,
-				count,
-				percentage: total === 0 ? 0 : (count / total) * 100,
+				count: entry.count,
+				percentage: total === 0 ? 0 : (entry.count / total) * 100,
 				values: [value],
+				rawValue: entry.raw,
 			})),
 			truncated: false,
 			otherCount: 0,
@@ -360,14 +368,15 @@ export function calculateCategoricalStats(
 
 	const head = ranked.slice(0, topN);
 	const tail = ranked.slice(topN);
-	const otherCount = tail.reduce((sum, [, count]) => sum + count, 0);
+	const otherCount = tail.reduce((sum, [, entry]) => sum + entry.count, 0);
 	return {
 		buckets: [
-			...head.map(([value, count]) => ({
+			...head.map(([value, entry]) => ({
 				value,
-				count,
-				percentage: (count / total) * 100,
+				count: entry.count,
+				percentage: (entry.count / total) * 100,
 				values: [value],
+				rawValue: entry.raw,
 			})),
 			{
 				value: OTHER_CATEGORY_LABEL,

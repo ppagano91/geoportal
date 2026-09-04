@@ -27,6 +27,37 @@ export interface PolygonStyle {
 	strokeWidth: number
 }
 
+/**
+ * Simbología de capa. El modo por defecto (ausente o `"simple"`) usa los
+ * colores literales de `pointStyle` / `lineStyle` / `polygonStyle`.
+ * `"categorized"` solo sustituye esos colores por una expresión data-driven;
+ * el resto de apariencia (opacidad, grosor, radio, contorno) no cambia.
+ */
+export type StyleMode = 'simple' | 'categorized'
+
+/** Valor discreto comparable en MapLibre (`match` + `to-string`). */
+export type CategoryValue = string | number | boolean
+
+export interface StyleCategory {
+	/** Valor real del atributo (no el label). Booleanos: `true`/`false`. */
+	value: CategoryValue
+	label: string
+	color: string
+}
+
+/**
+ * Simbología categorizada a nivel de capa (un campo, todos los tipos geométricos).
+ * `categories` son valores discretos; "Otros" (overflow) y "Sin dato" no van ahí.
+ */
+export interface CategorizedStyle {
+	field: string
+	categories: StyleCategory[]
+	/** Color de features sin dato (`null` / `undefined` / `""`). */
+	fallbackColor: string
+	/** Color del overflow Top-N. Ausente si no hay agrupación. No es el valor literal `"Otros"`. */
+	otherColor?: string
+}
+
 export interface ClusterConfig {
 	enabled: boolean
 	radius: number
@@ -63,6 +94,9 @@ export interface Layer {
 	pointStyle?: PointStyle
 	lineStyle?: LineStyle
 	polygonStyle?: PolygonStyle
+	/** Ausente o `"simple"`: colores literales. `"categorized"`: colores por atributo. */
+	styleMode?: StyleMode
+	categorizedStyle?: CategorizedStyle
 	cluster?: ClusterConfig
 	stats?: LayerStats
 	wmsUrl?: string

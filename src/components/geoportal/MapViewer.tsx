@@ -59,6 +59,12 @@ import {
 } from "./terraDraw";
 import { shouldRenderDrawingLayerAsGeoJson } from "../../persistence/drawingLayers";
 import {
+  categorizedColors,
+  categorizedPropertyExpression,
+  isCategorizedStyleActive,
+  resolveLayerPaintColor,
+} from "../../utils/categorizedStyle";
+import {
   getDrawDocument,
   getEditableLayerById,
   isEditableLayer,
@@ -233,6 +239,16 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
   const lineLayerId = `ln-${layer.id}`;
   const polyFillId = `pf-${layer.id}`;
   const polyLineId = `pl-${layer.id}`;
+  const circleColor = layer.pointStyle
+    ? resolveLayerPaintColor(layer, layer.pointStyle.color)
+    : "#0ea5e9";
+  const lineColor = layer.lineStyle
+    ? resolveLayerPaintColor(layer, layer.lineStyle.color)
+    : "#0ea5e9";
+  const fillColor = layer.polygonStyle
+    ? resolveLayerPaintColor(layer, layer.polygonStyle.fillColor)
+    : "#0ea5e9";
+  const categorized = isCategorizedStyleActive(layer);
 
   // recreate source if clustering config changed
   const cfgCache = getCfgCache(map);
@@ -275,9 +291,14 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
     (map.getSource(sourceId) as any).setData(layer.data);
   }
 
-  // helper for symbol image
-  function ensureSymbolImage() {
-    const imgName = `img-${layer.id}`;
+  // helper for symbol image (fill color is a parameter so categorized mode
+  // can register one image per category without changing geometry)
+  function symbolImageName(fillColor: string): string {
+    return `img-${layer.id}-${fillColor.replace(/[^a-zA-Z0-9]/g, "")}`;
+  }
+
+  function ensureSymbolImage(fillColor: string) {
+    const imgName = symbolImageName(fillColor);
     const st = layer.pointStyle!;
     const base = 64;
     const canvas = document.createElement("canvas");
@@ -287,7 +308,7 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
     ctx.clearRect(0, 0, base, base);
     ctx.lineWidth = st.strokeWidth;
     ctx.strokeStyle = st.strokeColor;
-    ctx.fillStyle = st.color;
+    ctx.fillStyle = fillColor;
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
     const cx = base / 2,
@@ -461,7 +482,7 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
             ],
             paint: {
               "circle-radius": layer.pointStyle.size,
-              "circle-color": layer.pointStyle.color,
+              "circle-color": circleColor,
               "circle-stroke-color": layer.pointStyle.strokeColor,
               "circle-stroke-width": layer.pointStyle.strokeWidth,
             },
@@ -475,7 +496,7 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
           map.setPaintProperty(
             ptUnclusterCircleId,
             "circle-color",
-            layer.pointStyle.color,
+            circleColor,
           );
           map.setPaintProperty(
             ptUnclusterCircleId,
@@ -510,7 +531,7 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
             ],
             paint: {
               "circle-radius": layer.pointStyle.size,
-              "circle-color": layer.pointStyle.color,
+              "circle-color": circleColor,
               "circle-stroke-color": layer.pointStyle.strokeColor,
               "circle-stroke-width": layer.pointStyle.strokeWidth,
             },
@@ -524,7 +545,7 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
           map.setPaintProperty(
             pointLayerId,
             "circle-color",
-            layer.pointStyle.color,
+            circleColor,
           );
           map.setPaintProperty(
             pointLayerId,
@@ -548,7 +569,16 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
       }
     } else {
       // symbol
-      const imgName = ensureSymbolImage();
+      const defaultImgName = ensureSymbolImage(layer.pointStyle.color);
+      const iconImage =
+        categorized && layer.categorizedStyle
+          ? (() => {
+              for (const color of categorizedColors(layer.categorizedStyle)) {
+                ensureSymbolImage(color);
+              }
+              return categorizedPropertyExpression(layer.categorizedStyle, symbolImageName);
+            })()
+          : defaultImgName;
       const iconSize = Math.max(0.25, layer.pointStyle.size / 32); // relative to canvas base
       // hide circle variants
       if (map.getLayer(pointLayerId))
@@ -567,13 +597,13 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
               ["in", ["geometry-type"], ["literal", ["Point", "MultiPoint"]]],
             ],
             layout: {
-              "icon-image": imgName,
+              "icon-image": iconImage,
               "icon-size": iconSize,
               "icon-allow-overlap": true,
             },
           });
         } else {
-          map.setLayoutProperty(ptUnclusterSymbolId, "icon-image", imgName);
+          map.setLayoutProperty(ptUnclusterSymbolId, "icon-image", iconImage);
           map.setLayoutProperty(ptUnclusterSymbolId, "icon-size", iconSize);
         }
         map.setLayoutProperty(
@@ -596,13 +626,13 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
               ["literal", ["Point", "MultiPoint"]],
             ],
             layout: {
-              "icon-image": imgName,
+              "icon-image": iconImage,
               "icon-size": iconSize,
               "icon-allow-overlap": true,
             },
           });
         } else {
-          map.setLayoutProperty(pointSymId, "icon-image", imgName);
+          map.setLayoutProperty(pointSymId, "icon-image", iconImage);
           map.setLayoutProperty(pointSymId, "icon-size", iconSize);
         }
         map.setLayoutProperty(
@@ -640,12 +670,12 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
           "line-cap": layer.lineStyle.lineCap ?? "butt",
         },
         paint: {
-          "line-color": layer.lineStyle.color,
+          "line-color": lineColor,
           "line-width": layer.lineStyle.width,
         },
       });
     } else {
-      map.setPaintProperty(lineLayerId, "line-color", layer.lineStyle.color);
+      map.setPaintProperty(lineLayerId, "line-color", lineColor);
       map.setPaintProperty(lineLayerId, "line-width", layer.lineStyle.width);
       map.setLayoutProperty(
         lineLayerId,
@@ -673,7 +703,7 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
           ["literal", ["Polygon", "MultiPolygon"]],
         ],
         paint: {
-          "fill-color": layer.polygonStyle.fillColor,
+          "fill-color": fillColor,
           "fill-opacity": layer.polygonStyle.fillOpacity,
         },
       });
@@ -681,7 +711,7 @@ function addOrUpdateGeoJson(map: Map, layer: Layer) {
       map.setPaintProperty(
         polyFillId,
         "fill-color",
-        layer.polygonStyle.fillColor,
+        fillColor,
       );
       map.setPaintProperty(
         polyFillId,
