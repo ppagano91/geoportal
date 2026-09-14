@@ -2345,7 +2345,7 @@ export function MapViewer(): JSX.Element {
     <div className="geoportal-map absolute inset-0 z-map overflow-hidden">
       <div ref={mapContainerRef} className="absolute inset-0 h-full w-full" />
 
-      {lensView.pointer && mapContainerRef.current ? (
+      {/* {lensView.pointer && mapContainerRef.current ? (
         <AnalysisLensHud
           x={lensView.pointer.x}
           y={lensView.pointer.y}
@@ -2354,7 +2354,7 @@ export function MapViewer(): JSX.Element {
           stats={lensView.stats}
           container={mapContainerRef.current}
         />
-      ) : null}
+      ) : null} */}
 
       {/* Izquierda: Dibujo (desktop/tablet) y Medición */}
       <div className="absolute top-3 left-3 z-map-controls isolate">

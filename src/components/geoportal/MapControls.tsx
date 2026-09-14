@@ -284,7 +284,7 @@ export function MapControls({
           <BarChart3 className="h-4 w-4" />
         </button>
       </div>
-      <AnalysisLensControl />
+      {/* <AnalysisLensControl /> */}
       {showDraw && openDraw && (
         <div className="surface max-w-[16rem] px-2 py-1.5 text-xs text-muted-foreground">
           {editable ? (
