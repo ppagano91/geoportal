@@ -44,14 +44,14 @@ export function BaseMapControl(): JSX.Element {
         <span className="maplibregl-ctrl-icon"></span>
       </button>
       {open && (
-        <div className="surface absolute right-0 top-full z-40 mt-1 w-44 p-2 max-md:right-full max-md:top-0 max-md:mt-0 max-md:mr-1">
-          <div className="text-xs text-muted-foreground mb-1">Mapas base</div>
+        <div className="surface absolute right-10 top-0 z-40 mt-0 w-44 p-2 max-md:right-full max-md:top-0 max-md:mt-0 max-md:mr-1">
+          {/* <div className="text-xs text-muted-foreground mb-1">Mapas base</div> */}
           <div className="flex flex-col">
             {items.map((it) => (
               <div
                 key={it.key}
                 className={cn(
-                  "w-full flex text-left rounded min-h-11 items-center cursor-pointer p-1 gap-2",
+                  "w-full flex text-left rounded min-h-8 items-center cursor-pointer p-1 gap-2",
                   state.baseMap === it.key
                     ? "bg-primary text-primary-foreground hover:bg-primary"
                     : "hover:bg-muted"
